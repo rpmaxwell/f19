@@ -24,23 +24,11 @@ SLOTS, NSLOTS, FS = DS + 0x9B88, DS + 0x855E, DS + 0x4EFC    # bullet slots 12 B
 TARGETS = DS + 0x80AA
 GUN_V = 4                                                    # matrix value vs SAM Radar / Mobile SAM
 
-def octo(dx, dy):
-    a, b = abs(dx), abs(dy); return max(a, b) + min(a, b) / 2
+# octo / ccip live in src/f19/rules/weapons.py (phases.py imports ccip from here). Self-contained assignments (not
+# imports) so tests/unit/core/core_legacy.extract still finds them.
+octo = __import__("f19.rules.weapons", fromlist=["octo"]).octo
+ccip = __import__("f19.rules.weapons", fromlist=["ccip"]).ccip
 
-def ccip(x, y, alt, pitch, hdg, fs, nslots):
-    """Impact point (units) of a bullet fired now, or None. The game keeps bullet velocities as whole units a frame
-    (speed r = 112 // fs; climb in units of 32 ft), so the dive angle comes in steps of ~1/r rad and the range in
-    steps of r: 2026-10-18 flight, alt 626 at -3.7 deg gave v (1, 22, -32 ft) and an impact 20 frames out (440 units),
-    not the 300 of the exact nose line. Rounding fits all three components seen so far (trunc doesn't fit vY)."""
-    r = 112 // max(fs, 1)
-    k = round(r * math.sin(math.radians(-pitch)))               # units of descent per frame
-    if k <= 0: return None
-    rh = round(r * math.cos(math.radians(pitch)))
-    vx, vy = round(rh * math.sin(math.radians(hdg))), -round(rh * math.cos(math.radians(hdg)))
-    a0 = alt - 2 - 32 * k                                       # after the spawn step
-    n = (a0 // (32 * k) + 1 if a0 >= 0 else 0) + 1              # frames until alt < 0
-    if n > 2 * nslots: return None                              # the slot is reused first: out of reach
-    return x + n * vx, y + n * vy, octo(n * vx, n * vy)
 
 def main():
     ap = argparse.ArgumentParser()
