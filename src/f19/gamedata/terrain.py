@@ -297,15 +297,15 @@ def write_outputs(th):
     rgb = np.stack([40 + 215 * v, 70 + 150 * v, 40 + 120 * v], -1)
     rgb[small == 0] = (25, 45, 70)
     img = Image.fromarray(rgb.astype(np.uint8)); d = ImageDraw.Draw(img)
-    S = img.size[0] / 0x8000
+    sc = img.size[0] / 0x8000                          # px per unit (was `S`, which shadowed the settings)
     place = S.logs / "theater" / f"{th}.json"
     if place.exists():
         for r in json.load(open(place))["records"]:
             if r["name"] and r["kind"] == 0 and 0 < r["x"] < 0x8000 and 0 < r["y"] < 0x8000:
-                px, py = r["x"] * S, r["y"] * S
+                px, py = r["x"] * sc, r["y"] * sc
                 d.ellipse((px - 2, py - 2, px + 2, py + 2), fill=(255, 255, 255)); d.text((px + 4, py - 6), r["name"], fill=(255, 255, 255))
     for o, hit in crash_check(th, W):
-        px, py = o["x"] * S, o["y"] * S
+        px, py = o["x"] * sc, o["y"] * sc
         col = (255, 60, 60) if hit else (255, 200, 0)
         d.ellipse((px - 8, py - 8, px + 8, py + 8), outline=col, width=2)
     img.save(out / f"{th}_terrain.png")
