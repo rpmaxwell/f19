@@ -13,7 +13,7 @@ The target is one layered package, `src/f19/` (plan: [docs/design/refactor_plan.
 | `core` | units (K = 64 per km), geometry, theaters, value types, settings, clock |
 | `gamedata` | EGAME/END loaders, .WLD, terrain (3DG/3DT/3D3), mission catalog |
 | `rules` | radar, missiles, fuel, weapons, takeoff/landing limits, scoring |
-| `emulator` | automation socket client, save states, launch, screen capture |
+| `emulator` | automation socket client (PEEK/POKE/keys), save states, launch; no screenshots: screen state comes from memory |
 | `memory` | the address table and the reader (-> GameState, Mission, Threats, EventList) |
 | `planner` | world, Router, fuel plan, alert sim, loiters, `plan_mission` / `route` API |
 | `pilot` | Controls, loops, behaviors (phases, reactions), arbiter, flight director, runner |

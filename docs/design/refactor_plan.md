@@ -68,8 +68,8 @@ f19/                                  (own git repo)
                 missions.py (catalog), data/ (calibration_v2.json, sites.json)
     rules/      radar.py, missiles.py, fuel.py, weapons.py (ordnance, release, ccip), flight.py (takeoff/landing limits),
                 scoring.py (rating, ID/bail-out penalties, current score)
-    emulator/   automation.py (socket client: public peek/peek_many/key_down/key_up/scan), savestate.py, launch.py,
-                capture.py (Capture interface; mac implementation)
+    emulator/   automation.py (socket client: public peek/peek_many/poke/key_down/key_up/scan), savestate.py, launch.py,
+                (no screen capture: screen state comes from memory, see WP-4)
     memory/     addresses.py (single table), reader.py (-> GameState, Mission, Threats, EventList)
     planner/    world, route (Router), fuelplan, alertsim, loiter, probes, profiles, report;
                 api.py: plan_mission(mission, profile) and route(state, goal, constraints); estimate.py
@@ -206,10 +206,30 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
 - **Done when:** WP-1 tests are unchanged and green; rules have unit tests built from the FINDINGS tables.
 
 ### WP-4 emulator + memory (subagent D)
-- Public socket API (no outside `_send`/`_recv_line`). Batched `peek_many` as the only memory path. Savestate/launch with
-  `Settings` paths (keep the macOS pieces behind `Capture`/launch interfaces).
-- `mission_finder`'s screen driving (Select New Mission round trips, its screenshot check) → `emulator/`, through
-  `Capture`; its CLI becomes `f19 mission`. This is the mission selector.
+- Public socket API (no outside `_send`/`_recv_line`). Batched `peek_many` is the only read path, and `poke` the only
+  write path. Savestate/launch use `Settings` paths.
+- **No screenshots in product code** (decided 2026-10-25). They're messy, need macOS screen-recording permission, and
+  fill the disk. Screen state comes from memory instead. `scripts/mission_finder.py`'s `screencapture` menu detection
+  and `unstick_keys.py`'s capture both go; "do keys work again" becomes a memory check. There is no `Capture` module.
+  If a picture is ever needed for debugging, add a `SCREEN` verb that returns the VGA framebuffer over the socket, in
+  memory, with no file. That isn't part of this refactor.
+- **WP-4a: POKE in the DOSBox-X automation server** (the fork in `~/projects/dosbox-x`, `src/misc/automation.cpp`, next
+  to `PEEK`/`OUT`):
+  - `POKE <phys hex> <hex bytes>` writes guest memory. It applies on the emulation thread the way queued `OUT`s do,
+    replies with an ack, and logs every write.
+  - Bounds-check the address (guest RAM only).
+  - Client: `Emulator.poke(phys, data)` with a read-back check.
+  - Build the fork and test it on the bare-prompt config before F-19.
+  - The fork is a separate repo with uncommitted local changes. Commit there on a branch of its own.
+- **WP-4b: mission selection by seed.** This replaces the reroll loop and its screenshot checks.
+  - `gamedata/missions.Generator` (the unicorn emulation of START cs:76C8 + cs:B61C-B72E, from mission_finder) searches
+    seeds offline for one that produces the wanted mission.
+  - Live sequence: POKE the seed into START's rand state (u32 at ds:7A50), then send one Select New Mission. Then read
+    the mission back from memory (`MemoryReader.mission()`) and check it against the prediction.
+  - Menu position: find START's menu/cursor variables by diffing PEEK snapshots while moving the cursor (a short
+    research task). Until then, use fixed key sequences, checked only by memory reads.
+  - The CLI becomes `f19 mission`; the 2 s/reroll loop is dropped. This is the mission selector.
+  - Only the missions tool calls `poke`; flight code never writes memory.
 - One address table; `MemoryReader.snapshot() -> GameState` merges `read_state` + `read_flight` + threats + events, plus
   `mission() -> Mission`. The time multiplier and frame counter go in the reader. A `ReplayReader` serves the same API
   from memlog snapshots.
