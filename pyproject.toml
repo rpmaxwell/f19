@@ -13,6 +13,9 @@ dev = ["pytest>=8"]
 # research/ only: notebooks, the pyghidra drivers, the x86 disassembler helper
 research = ["notebook>=7.5.0", "pyghidra", "capstone"]
 
+# scripts/mission_finder.py: emulates START's mission generator (uv run --group missions ...)
+missions = ["unicorn"]
+
 [build-system]
 requires = ["uv_build>=0.9,<0.10"]
 build-backend = "uv_build"

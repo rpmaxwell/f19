@@ -199,13 +199,17 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   mission catalog. `radar_game` → `rules/radar`; `missile_game` → `rules/missiles` (memlog utilities → `telemetry` or
   tests); `fuel_model` → `rules/fuel`; `ordnance` + `release_geometry` + `gun_probe.ccip` → `rules/weapons`; `score.py` +
   the bail-out/visual-ID/kill numbers from `notes/score_estimate_for_planner.md` + `_pane_score` → `rules/scoring`.
-  `read_mission.RADAR` is replaced by `rules/radar`.
+  `read_mission.RADAR` is replaced by `rules/radar`. The generator emulation in `scripts/mission_finder.py` (START
+  cs:76C8 + cs:B61C-B72E under unicorn, plus decoding) → `gamedata/missions` (`Generator`, `decode`); `unicorn` stays
+  in the optional `missions` dependency group.
 - Old modules become shims. No logic changes.
 - **Done when:** WP-1 tests are unchanged and green; rules have unit tests built from the FINDINGS tables.
 
 ### WP-4 emulator + memory (subagent D)
 - Public socket API (no outside `_send`/`_recv_line`). Batched `peek_many` as the only memory path. Savestate/launch with
   `Settings` paths (keep the macOS pieces behind `Capture`/launch interfaces).
+- `mission_finder`'s screen driving (Select New Mission round trips, its screenshot check) → `emulator/`, through
+  `Capture`; its CLI becomes `f19 mission`. This is the mission selector.
 - One address table; `MemoryReader.snapshot() -> GameState` merges `read_state` + `read_flight` + threats + events, plus
   `mission() -> Mission`. The time multiplier and frame counter go in the reader. A `ReplayReader` serves the same API
   from memlog snapshots.
