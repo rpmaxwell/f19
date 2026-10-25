@@ -1,6 +1,6 @@
 # F-19 refactor plan
 
-Draft, 2026-10-24. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
+Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9 (2026-10-25). This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
 read-only inventory of the current code (three parallel passes: pilot/runtime, planner/rules, research-vs-product).
 
 ## 1. Goals and non-goals
@@ -295,6 +295,16 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
     which differs by up to about 0x200 units, and at (0,0) gives 0x8000 rather than 0.
   - `world.KT_KMH` really means ground km/h per kt (1.852 × 0.788). Its comment says 0.784; the value is 0.788.
   - nav's `load_route` drops zero-length legs, and `Route.from_route_json` keeps them. Choose one rule in WP-7.
+- Found by WP-1:
+  - `radar_game._check` only prints; it asserts nothing. Over the whole corpus, EMV is right on 59625 of 59649
+    snapshots.
+  - `missile_game.check` returns False: R1 passes 629 of 631 pairs (the misses are AA-9 and SA-14).
+  - TerrainEscape `MARGIN_FT` was 150 in the recorded flight and is 100 now. Was the change intended?
+  - nav doesn't log the route `want` from before a reaction overrides it. Add it to the Frame in WP-5.
+  - `terrain_ahead` and `build_attacks` sit in nav's module-level code; the tests carry copies of them until WP-7.
+  - No memlog flight has MissileWatch decisions logged: memlogs end 10-22, and `m_action` started 10-23.
+  - Goldens are `ce_kolobrzeg_1022_2250` (171 s) and `ce_budejovice_1023_1811` (505 s); there is no non-CE golden.
+    `ce_stupsk_1022_2025` doesn't reproduce either.
 - `pg_shiraz_1024_1514` no longer plans: `PRIMARY: Airplane Shiraz: no usable attack bearing (… no path from
   (17616,10988) to (8000,9536))`, on the baseline code as well.
 
