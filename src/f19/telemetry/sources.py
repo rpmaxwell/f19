@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from f19.telemetry.frame import MemlogLayout, Snapshot, TelemetryFrame, frame_from_values
-from f19.telemetry.navcsv import Event, parse_row
+from f19.telemetry.navcsv import EXTENDED_COLUMNS, Event, parse_row
 from f19.telemetry.writer import SinkStats
 
 
@@ -57,11 +57,14 @@ class NavLogSource:
         with open(self.csv_path, newline="") as f: self.columns = tuple(next(csv.reader(f), ()))
 
     def rows(self):
-        """TelemetryFrames, one per CSV row, in file order."""
+        """TelemetryFrames, one per CSV row, in file order. frame.nav holds every EXTENDED column: the file's values,
+        None for columns this log doesn't have (so a sink with more columns writes them blank)."""
         with open(self.csv_path, newline="") as f:
             rd = csv.reader(f); cols = tuple(next(rd, ()))
+            missing = [c for c in EXTENDED_COLUMNS if c not in cols]
             for cells in rd:
                 vals, width = parse_row(cells, cols)
+                for c in missing: vals[c] = None     # not in this (older) log: unknown, never derived from the Frame
                 t = vals.get("t")
                 yield TelemetryFrame(t if isinstance(t, float) else 0.0,
                                      frame_from_values(vals) if self.build_frames else None, nav=vals,
@@ -136,8 +139,9 @@ class ReplaySource:
 # ---------------------------------------------------------------------------------------------------------- live
 class LiveSource:
     """Register on a TelemetryBus; iterate in a consumer thread (a HUD). write() never blocks: when the consumer
-    falls behind by maxsize frames the newest are dropped (stats.dropped_full). Iteration ends after close()."""
-    _END = object()
+    falls behind by maxsize frames the newest are dropped (stats.dropped_full). Iteration ends after close(), once
+    the queued frames are consumed."""
+    POLL_S = 0.05
 
     def __init__(self, maxsize=1024):
         self.stats = SinkStats()
@@ -152,22 +156,20 @@ class LiveSource:
     def flush(self, timeout=None): return True
 
     def close(self, timeout=10.0):
-        if not self._closed:
-            self._closed = True
-            while True:                          # make room for the end marker without blocking
-                try: self._q.put_nowait(self._END); break
-                except queue.Full:
-                    try: self._q.get_nowait(); self.stats.inc("dropped_full")
-                    except queue.Empty: pass
+        self._closed = True
         return True
 
     def get(self, timeout=None):
-        """The next frame, or None at the end / on timeout."""
-        try: fr = self._q.get(timeout=timeout)
-        except queue.Empty: return None
-        if fr is self._END: self._q.put_nowait(self._END); return None
-        self.stats.inc("written")
-        return fr
+        """The next frame; None at the end (closed and drained) or on timeout."""
+        end = None if timeout is None else time.monotonic() + timeout
+        while True:
+            wait = self.POLL_S if end is None else min(self.POLL_S, max(0.0, end - time.monotonic()))
+            try: fr = self._q.get(timeout=wait)
+            except queue.Empty:
+                if self._closed or (end is not None and time.monotonic() >= end): return None
+                continue
+            self.stats.inc("written")
+            return fr
 
     def __iter__(self):
         while (fr := self.get()) is not None: yield fr
