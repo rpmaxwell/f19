@@ -1,0 +1,32 @@
+# Data lives outside the repo (F19_DATA, default ~/f19-data)
+/logs/
+/dumps/
+/saves/
+LOGCPU.TXT
+log_cpu_data.json
+MEMDUMP.*
+
+# Game binaries and derived images (copyrighted)
+*.EXE
+*.exe
+*.BIN
+*.bin
+
+# Ghidra projects
+*.rep/
+*.gpr
+*.lock
+*.lock~
+!uv.lock
+
+# Third-party clones
+f15se2-re/
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+.DS_Store
+*.log

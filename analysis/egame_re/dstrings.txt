@@ -1,0 +1,303 @@
+0008 MS Run-Time Library - Copyright (c) 1988, Microsoft Corp
+0042 regn.xxx
+004b lb.xxx
+0052 pg.xxx
+0059 nc.xxx
+0060 ce.xxx
+0076 256pit.PIC
+0081 cockpit.PIC
+0097 Allocated 1Mb of space????$MS-DOS lied to us about how much memory was available$Filename not found$Not enough memory to load file$Overlay load failed for some reason$Overlay has overrun allocated memory$Unable to shrink overlay memory allocation$Error releasing overlay memory$
+095a .3D3
+0965 photo.3d3
+096f ObjData overflow
+0980 .3dT
+0988 .3dG
+34a3 ??????===;;;999777555333000///---+++)))&&&$$$"""   
+3506 ???9==4<</;:*99%87 66
+3593 ???*
+359f :++*
+35b3 *??????????????????????????????????????????????????????????????????
+36a3 9 : 
+36ad : :98
+36d1 ""7#8#"768!!8$876!///
+3701 $%5&6%$546$$6'654#***
+372b ###   ''4(4('224''4)422%&&&
+374f  *)*  *#**'$""""""))2*2*)002))2,200'"""
+378c $"(%'(
+37c5 hnj$l
+37d5 uBvlw
+37dd y}z]{*|
+3809 |*|]{}z
+3813 xlwBv
+3823 m$lnj
+385b +'((%$"
+398e $"(%'(
+39c7 hnj$l
+39d7 uBvlw
+39df y}z]{*|
+3a0b |*|]{}z
+3a15 xlwBv
+3a25 m$lnj
+3a5d +'((%$"
+424c  0 0 1 1 2 2 3 3 4 4 5 5 6 6 7 7 8 8 9 9101011111212131314141515161617171818191900500050005000500050005000500050005000500050005000500050005000500050005000500050 0 1 2 3 4 5 6 7 8 9101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869000
+4627  "$%')+,.048<@HP`p
+4644 p`PH@<840.,+)'%$" 
+483c Cargo delivered
+484c Safe Landing
+486e None
+487c SA-2
+488a SA-5
+4898 SA-8B
+48a6 SA-10
+48b4 SA-11
+48c2 SA-12
+48d0 SA-13
+48de SA-N-4
+48ec SA-N-5
+48fa SA-N-6
+4908 SA-N-7
+4916 Hawk
+4924 Rapier
+4932 Tiger
+4940 Seacat
+494e IL76
+49b0 MIG-23
+49b7  Flogger
+49d0 MIG-25
+49d7  Foxbat
+49f0 MIG-29
+49f7  Fulcrum
+4a10 MIG-31
+4a17  Foxhound
+4a30 Su-27
+4a37  Flanker
+4a50 IL-76
+4a57  Mainstay
+4a70 F-4E
+4a77  Phantom
+4a90 F-14
+4a97  Tomcat
+4ab0 F-18
+4ab7  Hornet
+4ad0 An-72
+4ad7  Coaler
+4af0 F-18
+4af7  Hornet
+4b10 MIG-23
+4b17  Flogger
+4b30 F-14
+4b37  Tomcat
+4b50 F-4E
+4b57  Phantom
+4b70 Yak-38
+4b77  Forger
+4b90 Tu-95
+4b97  Bear
+4bb0 Mi-24
+4bb7  Hind
+4bd7  Tiger
+4bf7  Boeing
+4c10 None
+4c22 SA-2
+4c34 SA-5
+4c46 SA-8B
+4c58 SA-10
+4c6a SA-11
+4c7c SA-12
+4c8e SA-13
+4ca0 SA-N-4
+4cb2 SA-N-5
+4cc4 SA-N-6
+4cd6 SA-N-7
+4ce8 Hawk
+4cfa Rapier
+4d0c Tiger
+4d1e Seacat
+4d30 AA-2
+4d42 AA-8
+4d54 AA-6
+4d66 AA-7
+4d78 AA-9
+4d8a AA-10
+4d9c AIM120
+4dae AIM-9
+4dc0 HARM
+4dd2 Penguin
+4de4 Harpoon
+4df6 AGM-65
+4e08 LGBOMB
+4e1a RTBOMB
+4e2c FFBOMB
+4e3e AIM-7W
+4e50 AIM-9W
+4e62 SA-14
+4e74 AA-6
+4e86 AA-7
+4e98 AA-9
+4eaa AA-10
+4ebc Equip.
+4efe AIM-9M
+4f08 Sidewinder
+4f18 AIM-120
+4f22 AMRAAM
+4f32 AGM-88A
+4f3c HARM
+4f4c P3 ASM
+4f56 Penguin
+4f66 AGM-86A
+4f70 Harpoon
+4f80 AGM-65D
+4f8a Maverick
+4f9a GBU-12
+4fa4 Paveway
+4fb4 Mk 20
+4fbe Rockeye
+4fce Dndl
+4fd8 Durandal
+4fe8 Mk 82-0
+4ff2 Slick
+5002 Mk 82-1
+500c Snakeye
+501c Mk 20
+5026 Rockeye II
+5036 Mk 122
+5040 Fireeye
+5050 CBU-72
+505a Fuel-Air
+506a Mk 35
+5074 IN Cluster
+5084 ISC B-1
+508e Minelets
+509e 135 mm
+50a8 Camera
+50b8 1900lbs
+50c2 Extra Fuel
+50d2 20 mm
+50dc Guns
+50ec Special
+50f6 Equip
+553e Stores exhausted
+554f Flare
+5555 Chaff
+555b Decoy
+5561  released
+556b  at 
+5570  detected
+557a  - Radar ID
+5586  firing 
+558f  fired
+559a  landing
+55a3  on final
+55ad Visual ID - 
+55ba  fired by 
+55c9  taking off
+55d6  misses 
+55df  destroyed by 
+55ee Blast damage
+55fb Equipment Delivered
+560f Bad Drop
+5618  ground impact
+5627 Hit by 
+562f Ineffective
+563b  hit by 
+5644 Second. target
+5653 Primary target
+5662 Bay closed
+566d Fuel transfer
+567b  fired
+5858 stall warning
+5869 GUN 
+586e AIR-GROUND
+587d AIR-AIR
+5885 FLAPS
+588b BRAKE
+5891 ACCEL
+5897 TRAINING
+58a0 Waypoint 
+58aa  reached
+58b7 TrackCam 
+58c1 Ahead
+58c7 Rear
+58cc Right
+58d2 Left
+58dc Select Waypoint
+58ec Change Waypoint
+58fc TIME
+5901  Waypoint 
+590c  Dist-
+5918  MIN.  ETA
+5923 Fuel 
+5929  lbs.
+5936 Weapons
+5952 Damage
+5959 CHAFF  
+5961 FLARES 
+5969 Mission
+5971 Mission Orders
+5980 Take off from
+598e SECONDARY
+5998 PRIMARY
+59a0  Mission
+59a9 Completed
+59b3 Photograph enemy
+59c4 Land supplies at
+59d5 Drop supplies over
+59e8 Destroy enemy
+59f6 Destroy AN72 flying to
+5a0d Intercept AN72 leaving
+5a24 Plane returning to
+5a37 Destroy plane orbiting
+5a4e Before 
+5a56 Time expired
+5a63 Return to
+5a6d Sightings  V 
+5a7b   R 
+5a84 Data Base
+5a8e Missile range- 
+5aa2 Data Base
+5aaf  missiles
+5ab9 Missile range- 
+5acd Max Speed- 
+5ad9  mph
+5ade  doppler
+5ae7  pulse
+5aee  radar
+5af5 Max. range 
+5b05 Eff. range 
+5b1c  destroyed by gunfire
+5b32 Hit by gunfire
+5b41  destroyed by gunfire
+5b57 Frame 
+5b5e Target photographed.
+5b73 Primary Target
+5b82 Secondary Target
+5b93 Civilian or Friendly
+5ba8 Primary Target
+5bb7 Speed 
+5bbe  KMH
+5bc3 Radio Beacon
+5bd0 Radio beacon bearing 
+5be6 Drop supplies now
+5bf8 Missile Lock
+5c05 Range 
+5c12 .3D3
+5c1a Open Error on *.3D3
+5c30 STFLT.xxx
+5c3a BRG 
+5c40 Detail Level 
+5c4e Kybd Sensitivity
+5c5f Sounds 
+5e78 :File not found$:No file buffers available$:Open error $File closing error$Read error$Write error$
+6086 6`;C_FILE_INFO
+6240 <<NMSG>>
+624a R6000
+6251 - stack overflow
+6266 R6003
+626d - integer divide by 0
+6287 R6009
+628e - not enough space for environment
+62ba run-time error 
+62cc R6002
+62d3 - floating point not loaded
+62f3 R6001
+62fa - null pointer assignment
