@@ -7,7 +7,7 @@ refactor, so each later wave can show it changed nothing.
 
 ```
 uv run pytest                 # fast suite, ~22 s
-uv run pytest --run-slow      # + golden planner runs and whole-corpus checks, ~15-20 min
+uv run pytest --run-slow      # + golden planner runs and whole-corpus checks, ~13.5 min
 uv run pytest tests/replay --update-baseline   # rewrite tests/replay/baseline.json (review the diff!)
 ```
 
