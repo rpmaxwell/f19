@@ -35,3 +35,13 @@ def test_conversions():
     assert abs(u.ground_units_per_s(kt) / u.K - kt * 0.788 * 1.852 / 3600) < 1e-15
     assert abs(u.ground_kmh(kt) - kt * world["KT_KMH"]) < 1e-12
     assert abs(u.m_to_ft(u.ft_to_m(1234.5)) - 1234.5) < 1e-9
+
+
+def test_core_is_stdlib_only():
+    import ast, sys
+    from core_legacy import REPO
+    for f in (REPO / "src/f19/core").glob("*.py"):
+        for n in ast.walk(ast.parse(f.read_text())):
+            mods = [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module] if isinstance(n, ast.ImportFrom) else []
+            for m in mods:
+                assert m.startswith("f19.core") or m.split(".")[0] in sys.stdlib_module_names, (f.name, m)
