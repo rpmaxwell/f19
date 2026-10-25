@@ -334,6 +334,16 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   - No memlog flight has MissileWatch decisions logged: memlogs end 10-22, and `m_action` started 10-23.
   - Goldens are `ce_kolobrzeg_1022_2250` (171 s) and `ce_budejovice_1023_1811` (505 s); there is no non-CE golden.
     `ce_stupsk_1022_2025` doesn't reproduce either.
+- Found by WP-3:
+  - **The PG territory grid is shifted by 7 bytes.** The name-list search finds "Abbas", not "Bandar Abbas", so the
+    grid ends in the bytes `"Bandar"` and 115 of the 256 cells get the wrong side. It affects the planner's PG terrain
+    and territory, and **may explain the `pg_shiraz` PlanError below**. Kept as-is during the move.
+  - `terrain_3d` crashed (UnboundLocalError) from WP-0 until WP-3 fixed it (7761a93). The cause was WP-0's path rewrite
+    naming the settings `S` while a local `S` shadowed it. No other file has the collision.
+  - `radar.md` gives EMV 56 at 10000 ft Veteran; the code gives 55 (it floors `alt // 3` first). One of them is wrong.
+- Found by WP-5: legacy logs keep wall time only (no game time), event times rounded to whole seconds, a memlog paired
+  with its nav log by nearest epoch (~12 s apart), and no route `want` from before overrides. New runs written through
+  `FileFlightStore` record the route want, the behavior and the plan version.
 - `pg_shiraz_1024_1514` no longer plans: `PRIMARY: Airplane Shiraz: no usable attack bearing (… no path from
   (17616,10988) to (8000,9536))`, on the baseline code as well.
 
