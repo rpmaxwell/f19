@@ -287,6 +287,14 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
 - `abort_attack` from MissileWatch is never read by nav (nav uses `m_hold`).
 - `plan.py:694 takeoff_heading` is dead code; `parse_theater.py` runs at import.
 - `GROUND_PER_KT` 0.788 vs `fuel_model`'s 1.852 with no ground factor.
+- Found by WP-2 (core tests against every old copy):
+  - Two kinds of `game_dist`. The float copies (nav, phases, nav_tui, gun_probe) halve with `/2` and have no clamp.
+    radar_game and missile_game halve with `>>1` and clamp to 0x7FFF. They differ for odd minima and beyond 512 km.
+  - `nav.game_dist` returns km; every other copy returns units.
+  - `radar_game.angle` and planner `hdg65536` use exact atan2. `missile_game.atan2g` is the game's polynomial,
+    which differs by up to about 0x200 units, and at (0,0) gives 0x8000 rather than 0.
+  - `world.KT_KMH` really means ground km/h per kt (1.852 × 0.788). Its comment says 0.784; the value is 0.788.
+  - nav's `load_route` drops zero-length legs, and `Route.from_route_json` keeps them. Choose one rule in WP-7.
 - `pg_shiraz_1024_1514` no longer plans: `PRIMARY: Airplane Shiraz: no usable attack bearing (… no path from
   (17616,10988) to (8000,9536))`, on the baseline code as well.
 
