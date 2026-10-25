@@ -17,18 +17,22 @@ GOLDEN = PLAN / "ce_budejovice_1023_1811"
 need_data = pytest.mark.skipif(not GOLDEN.exists(), reason="F19_DATA plan logs not present")
 
 
+def _decoded_keys(reqs_and_decoder):
+    """Keys of the dict a reader decodes (zero bytes in). Since WP-4 the readers live in f19.memory.reader
+    (scripts/f19_state.py is a shim), as (requests, decoder) pairs."""
+    reqs, dec = reqs_and_decoder
+    return list(dec([bytes(n) for _, n in reqs]))
+
+
 def _return_keys(fn):
-    """Keyword names of the dict(...) a read_* function in f19_state.py returns."""
-    tree = ast.parse((REPO / "scripts/f19_state.py").read_text())
-    f = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == fn)
-    ret = next(n for n in ast.walk(f) if isinstance(n, ast.Return))
-    return [k.arg for k in ret.value.keywords]
+    """Keyword names of the dict a read_* function returns (read_flight)."""
+    from f19.memory import reader as R
+    return _decoded_keys({"read_flight": R._r_flight}[fn](0))
 
 
 def _status_keys():
-    src = (REPO / "scripts/f19_state.py").read_text()
-    body = src[src.index("def read_status"):src.index("def read_alerts")]
-    return re.findall(r'"(\w+)"', body[body.index("zip(["):body.index("], (")]) + re.findall(r'r\["(\w+)"\]', body)
+    from f19.memory import reader as R
+    return _decoded_keys(R._r_status(0))
 
 
 def _values(obj):
