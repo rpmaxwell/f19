@@ -1,7 +1,7 @@
 # Note for the flight-planning logic: an "estimated score" for a mission plan
 
 From the session that decoded the debrief (2026-10-17). Source of truth: FINDINGS.md, section
-"Mission rating formula — decoded from END.EXE"; disassembly in analysis/end_re/score_real.asm.
+["Mission rating formula — decoded from END.EXE"](../game/scoring-awards.md#mission-rating-formula--decoded-from-endexe-2026-10-17); disassembly in analysis/end_re/score_real.asm.
 The formula below reproduces two observed debrief numbers exactly (850 -> 212, and 833).
 
 ## The formula
@@ -71,8 +71,8 @@ END DGROUP 0x86ae, so the addresses during briefing/flight are unknown).
 1. The fuel multiplier field (commData+0x2e) is presumably the briefing FUEL ESTIMATE. Not yet verified live.
    The user has only seen estimates up to ~10,000 lb, so x10/8 may be the practical ceiling.
 2. Event types 6 and 7 cost -20 / -10 base in Cold War: 6 = visual ID by an aircraft, 7 = radar ID by a site
-   (EGAME, 2026-10-18; FINDINGS.md "Radar sites"). Avoiding IDs is worth points directly.
-3. Burn rate is now exact: 2 + thr²//1000 lb per 4 game s, nothing else (FINDINGS.md "Fuel burn and cruise speed",
+   (EGAME, 2026-10-18; [FINDINGS.md "Radar sites"](../game/radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18)). Avoiding IDs is worth points directly.
+3. Burn rate is now exact: 2 + thr²//1000 lb per 4 game s, nothing else ([FINDINGS.md "Fuel burn and cruise speed"](../game/fuel.md#fuel-burn-and-cruise-speed--egame-2026-10-18),
    analysis/fuel_model.py). 50 % = 64 lb per sample at any weight/altitude. The "higher / lower throttle burn less
    (manual)" line above is superseded: altitude doesn't change the burn.
 4. Present the estimate as a range: route samples +- a few for the timing of the 64 s grid, plus the fuel

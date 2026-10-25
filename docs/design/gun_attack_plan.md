@@ -3,7 +3,7 @@
 Goal: Conventional War sorties where nav strafes SAM radars with the 20 mm gun: kill the radar, keep the
 missiles for targets the gun can't kill, and fly home unseen.
 
-## What the game does (decoded from EGAME, see FINDINGS.md "Guns")
+## What the game does (decoded from EGAME, see [FINDINGS.md "Guns"](../game/weapons.md#guns--egame-2026-10-18-from-the-disassembly-not-yet-seen-in-flight))
 
 - **Trigger:** Backspace (key 0x0E08) sets the "button 0" flag ds:5C6E for one frame, and joystick button 0 does
   the same. Enter is button 1 (weapons). A bullet spawns only on **odd frames** while the flag is set, so a 0.2 s
@@ -29,7 +29,7 @@ missiles for targets the gun can't kill, and fly home unseen.
   If a launcher or building sits closer to the impact than the radar does, the bullet "hits" that object instead.
 - **Ammo:** 650 rounds, and each bullet costs 40/fs rounds (10 at fs 4, 5 at fs 8), so 65-130 bullets a sortie.
 - **Score (Conventional):** SAM Radar **3** base points (END table 0x4258, indexed by category: confirmed; full
-  list in notes/score_estimate_for_planner.md). At CE, Veteran and Realistic that's about x4, so roughly 12 points a radar. Most of a radar kill's value is the detection it removes, not the points.
+  list in [notes/score_estimate_for_planner.md](score_estimate_for_planner.md)). At CE, Veteran and Realistic that's about x4, so roughly 12 points a radar. Most of a radar kill's value is the detection it removes, not the points.
 
 ## The aiming problem reduces to CCIP
 
@@ -115,7 +115,7 @@ the ones whose rings cover the route, killed in order, gun first and missiles fo
 
 ## Status 2026-10-19: autopilot written (phase 4), not yet flown
 
-The continuous-tan CCIP table above is superseded: velocities are whole units a frame (FINDINGS.md "Guns", flight-tested),
+The continuous-tan CCIP table above is superseded: velocities are whole units a frame ([FINDINGS.md "Guns"](../game/weapons.md#guns--egame-2026-10-18-from-the-disassembly-not-yet-seen-in-flight), flight-tested),
 so pitch only matters by band. Hand-flown: Wittenberg and Cottbus radars killed (bullets 1-1.5 u off), Wittstock survived
 bullets 6.5 u past it (snapped to another site object). Destroyed sites never pulse again (scheduler 0x503a).
 

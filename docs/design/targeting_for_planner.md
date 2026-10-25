@@ -1,7 +1,7 @@
 # Note for the flight-planning logic: low-level targeting (stand-off distances and release technique)
 
 From the session that decoded the weapon code (2026-10-17). Source of truth: FINDINGS.md, sections
-"Ordnance vs target strength", "Weapon release, altitude and blast damage" and "Photo, lock and guidance".
+["Ordnance vs target strength"](../game/weapons.md#ordnance-vs-target-strength--decoded-from-egameexe-2026-10-17), ["Weapon release, altitude and blast damage"](../game/weapons.md#weapon-release-altitude-and-blast-damage--egame-2026-10-17) and ["Photo, lock and guidance"](../game/weapons.md#photo-lock-and-guidance--egame-2026-10-17).
 Numbers come from EGAME.EXE's own rules (simulated in `analysis/release_geometry.py`), **not yet flight-tested**.
 
 **Assumption: the plane cruises below 200 ft** (radar), and every attack is planned to stay there. Bombs are the

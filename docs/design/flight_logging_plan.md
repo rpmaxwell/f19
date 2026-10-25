@@ -1,8 +1,8 @@
 # Flight logging plan
 
 Goal: one complete record per flight, so a crash, hit, ID or fuel surprise can be reconstructed afterwards without
-guessing. Status 2026-10-18: addresses decoded (FINDINGS.md "Flight-log variables", "Radar sites: pulses, duty cycle,
-detection", "Fuel burn and cruise speed"); readers `read_status` / `read_alerts` in scripts/f19_state.py; logger not
+guessing. Status 2026-10-18: addresses decoded (FINDINGS.md ["Flight-log variables"](../game/memory-map.md#flight-log-variables-fuel-damage-clock-ids-threats--egame-2026-10-18), ["Radar sites: pulses, duty cycle,](../game/radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18)
+detection", ["Fuel burn and cruise speed"](../game/fuel.md#fuel-burn-and-cruise-speed--egame-2026-10-18)); readers `read_status` / `read_alerts` in scripts/f19_state.py; logger not
 built yet.
 
 ## Where it runs

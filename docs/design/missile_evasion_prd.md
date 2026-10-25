@@ -20,12 +20,12 @@ control), so Veteran SA-14 cells give cheap validation data.
 
 ## Source of truth
 
-- **notes/enemy_ordnance_and_countermeasures.md**: the decoded missile model (launch, seeker cone, IR tail rule,
+- **[notes/enemy_ordnance_and_countermeasures.md](../game/missiles-countermeasures.md)**: the decoded missile model (launch, seeker cone, IR tail rule,
   launcher support beyond 8 km, jamming/burn-through, flare/chaff/decoy rules, hit test, turn limits), the ordnance
   table, and what has been checked against memlogs. Read it first; this PRD doesn't repeat the derivations.
-- FINDINGS.md "Radar sites: pulses, duty cycle, detection"; `analysis/radar_game.py` (emv, site_return, alert_step,
+- [FINDINGS.md "Radar sites: pulses, duty cycle, detection"](../game/radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18); `analysis/radar_game.py` (emv, site_return, alert_step,
   pulse_period_ticks): use it, don't re-derive.
-- notes/aircraft_profiles.md and `phases.FighterWatch` (fighter radars, the per-heading scoring pattern to copy).
+- [notes/aircraft_profiles.md](../game/aircraft.md) and `phases.FighterWatch` (fighter radars, the per-heading scoring pattern to copy).
 - Memlog checks: `analysis/missile_scan.py`, `analysis/missile_track.py <run> [-v]`, `analysis/missile_rules_check.py`.
 - Elite memlogs: **1792628244** (Liberec: 1 AA-9 hit), **1792715432** (Stupsk: SA-10 went dumb, 4 AA-9s, 3 hits).
 
@@ -54,7 +54,7 @@ Time: the Elite flights ran ~2.6 game s per real s (clock 80 ticks in 62 real s)
 ## Requirements
 
 ### R1. `analysis/missile_game.py`: the missile model as code
-Like `radar_game.py`: integer rules from notes/enemy_ordnance_and_countermeasures.md §1, per frame:
+Like `radar_game.py`: integer rules from [notes/enemy_ordnance_and_countermeasures.md §1](../game/missiles-countermeasures.md#1-how-an-enemy-missile-works), per frame:
 - `spec(s)` -> name, range, speed, class, agility; `seeker_ok(m, target, player_hdg, cls)`; `jammed(m, cls, dist,
   ecm, irj, net_timer, opp)`; `launcher_ok(m, sites, aircraft, dist)`; `cm_capture(m, cms, player_hdg, cls, opp)`;
   `step(m, aim, locked, opp, fs)` (steer with the clamp, loft aim, unlocked nose-over, move, ttl);
@@ -128,7 +128,7 @@ Expected behaviour that falls out (use these as unit tests of the cost function)
   turn; the pull-up rules of the 2026-10-22 fix stay in force.
 - Abort an attack run / photo pass when a threat is predicted (bay open = +24 EMV); resume after.
 - Throttle: use `thr.target` like FighterWatch (and respect the 138 kt guard); full power only in survival mode.
-- Keys: flare `1`, chaff `2` (trial_decrement_correlation), IR jammer `3`, radar jammer `4` (FINDINGS), decoy:
+- Keys: flare `1`, chaff `2` (trial_decrement_correlation), IR jammer `3`, radar jammer `4` ([FINDINGS](../game/memory-map.md#flight-log-variables-fuel-damage-clock-ids-threats--egame-2026-10-18)), decoy:
   **find the key** (probably `5`; check with a stores read before / after). Verify each with a stores / ds:684C read.
 - Flag: `--missile-watch act|observe|off`; default `act` at opp 3, `observe` otherwise.
 
@@ -167,7 +167,7 @@ Code: `analysis/missile_game.py` (R1), `scripts/missile_watch.py` (MissileWatch 
 move as a unit in the nav refactor), `scripts/f19_state.read_missile_world` / `read_enemy_missiles` (R2),
 `scripts/nav.py` (`--missile-watch act|observe|off`, chain route/attack -> FighterWatch -> MissileWatch -> TerrainEscape,
 attack on hold + bay shut while acting, CSV `missile`, `m_worst`, `m_action`, banner), `scripts/missile_replay.py`
-(acceptance 2 + closed loop). Decoy key: **'5'** (disassembly key table). Details: notes/enemy_ordnance §7.
+(acceptance 2 + closed loop). Decoy key: **'5'** (disassembly key table). Details: [notes/enemy_ordnance §7](../game/missiles-countermeasures.md#7-re-read-for-analysismissile_gamepy-2026-10-23-later).
 
 - R1 gate: 629/631 snapshot pairs, 26/27 turning pairs, 64/64 outcomes (the two misses are explained in §7). Two rules
   the PRD didn't know matter most: expired CMs keep capturing (memlog-confirmed, 7/7 pairs) and a CM the missile flies

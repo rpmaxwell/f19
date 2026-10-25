@@ -21,8 +21,8 @@ recorded flight, and the heuristic is wrong in ways that change routes:
 
 ## Source of truth
 
-- FINDINGS.md: "Radar sites: pulses, duty cycle, detection", "Flight-log variables" (SA-14 cells, IDs), "Fuel burn and
-  cruise speed".
+- FINDINGS.md: ["Radar sites: pulses, duty cycle, detection"](../game/radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18), ["Flight-log variables"](../game/memory-map.md#flight-log-variables-fuel-damage-clock-ids-threats--egame-2026-10-18) (SA-14 cells, IDs), ["Fuel burn and
+  cruise speed"](../game/fuel.md#fuel-burn-and-cruise-speed--egame-2026-10-18).
 - **`analysis/radar_game.py`**: the game's formulas in integer form (`emv`, `site_return`, `seen`, `alert_step`,
   `pulse_period_ticks`, `duty_fraction`, `sam_range_km`, `radar_spec`). `python analysis/radar_game.py check` replays the
   memlog snapshots (EMV 17344/17359 within ±1, pink pulses 726/766, duty flag 97 %). Use it; don't re-derive.
@@ -70,7 +70,7 @@ radar margins may override it (e.g. slow inside a doppler site's danger margin).
 phases.Throttle / nav `--auto` before relying on per-leg speed and say what's needed if not.
 
 ### R6. Fuel model and fuel-efficiency optimisation (fuel = time in enemy airspace = points)
-Facts (FINDINGS.md "Fuel burn and cruise speed", memlog-verified; `analysis/fuel_model.py`):
+Facts ([FINDINGS.md "Fuel burn and cruise speed"](../game/fuel.md#fuel-burn-and-cruise-speed--egame-2026-10-18), memlog-verified; `analysis/fuel_model.py`):
 - Burn per 4 game s = `2 + thr²//1000` lb while the throttle setting is not 0, + damage count with a tank leak.
   **Nothing else**: no altitude, flaps, gear, ordnance, fuel weight or difficulty term. lb/min: 50 % 60, 60 % 75,
   70 % 90, 80 % 120, 100 % 180.
@@ -93,7 +93,7 @@ Requirements:
    leg with fuel_model + the R1 radar margins, and report the choice.
 2. **Loiter budget.** `enemy_samples ≈ (fuel_loaded + extra_fuel − transit_fuel − reserve) / lb_per_sample(enemy
    throttle)` plus the samples the route itself spends in enemy cells. Count samples by walking the route in game time
-   (one per 64 s, phase unknown → report a range), as notes/score_estimate_for_planner.md describes, but with each
+   (one per 64 s, phase unknown → report a range), as [notes/score_estimate_for_planner.md](score_estimate_for_planner.md) describes, but with each
    leg's own speed from fuel_model (not a flat 6.2 km).
 3. **Where to spend it.** Loiter / extra route length only in enemy cells that are radar-quiet under R1 (rough or
    mountain-edge cells, no SA-14 cell by day, away from doppler head-on and pulse side-on aspects) and not near a
@@ -118,7 +118,7 @@ avoid all of them by day with a high cost per minute inside; free at night. Expo
 
 ### R8. Settings
 `opp` (from the plan's settings), `war` = gameData+0x3A (0 in all flights so far; default 0), night flag. All of the
-radar numbers scale with opp; the table in FINDINGS is Veteran.
+radar numbers scale with opp; [the table in FINDINGS](../game/radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18) is Veteran.
 
 ### R9. Exploratory tactic: score-farming loiter in an enemy mountain cell next to friendly lines
 The user's idea (2026-10-18): loiter in enemy territory where radar can't see the plane, collect the 64 s samples, then
@@ -170,10 +170,10 @@ Requirements:
 
 ## Not in scope
 nav changes, flying the plan, re-deriving any formula. If the code disagrees with radar_game.py, radar_game.py and
-FINDINGS.md win; report the disagreement.
+[FINDINGS.md](../../FINDINGS.md) win; report the disagreement.
 
 ## Done when
-- `radar_game.py check` still passes; planner unit checks reproduce three numbers from the FINDINGS detection table
+- `radar_game.py check` still passes; planner unit checks reproduce three numbers from the [FINDINGS detection table](../game/radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18)
   (e.g. SA-11 side-on 50 km, SA-10 head-on 15 km at 200 kt, SA-2 head-on never; Veteran, EMV 10, flat).
 - A re-plan of `logs/plan/ce_tabor_auto` and `logs/plan/ce_katowice` shows the R3 report, with routes that avoid SA-14
   cells by day, fly radial to pulse sites / tangential to dopplers near them, and prefer rough/mountain-edge cells to sea.
@@ -182,4 +182,4 @@ FINDINGS.md win; report the disagreement.
   loiter budget; the `fuel` profile beats the current planner's sample estimate on the same mission.
 - R9: a `mountain_loiter` plan for CE from Neuberg (or the nearest friendly base) to cell (4,11) with the racetrack,
   fuel budget, expected samples/points and the first-flight test plan.
-- FINDINGS.md gets a short "Planner model (date)" note; old planner beliefs in radar.py's docstring are replaced.
+- FINDINGS.md gets a short ["Planner model (date)"](planner.md#planner-model-2026-10-19) note; old planner beliefs in radar.py's docstring are replaced.

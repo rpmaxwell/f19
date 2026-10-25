@@ -1,8 +1,8 @@
 # Enemy ordnance and countermeasures (F-19, EGAME)
 
 Decoded 2026-10-23 from the EGAME disassembly (analysis/egame_re/egame_all.asm) and checked against the memlog flights
-where noted. Builds on FINDINGS.md ("Photo, lock and guidance", "Flight-log variables", "Radar sites") and
-notes/aircraft_profiles.md. Memlog checks: `analysis/missile_scan.py`, `analysis/missile_track.py <run> [-v]`,
+where noted. Builds on FINDINGS.md (["Photo, lock and guidance"](weapons.md#photo-lock-and-guidance--egame-2026-10-17), ["Flight-log variables"](memory-map.md#flight-log-variables-fuel-damage-clock-ids-threats--egame-2026-10-18), ["Radar sites"](radar.md#radar-sites-pulses-duty-cycle-detection--egame-2026-10-18)) and
+[notes/aircraft_profiles.md](aircraft.md). Memlog checks: `analysis/missile_scan.py`, `analysis/missile_track.py <run> [-v]`,
 `analysis/missile_rules_check.py <runs>`.
 
 Units: positions in waypoint units (64 per km); angles 65536 = 360 deg; fs = frame scale ds:4EFC (frames per 2 s tick);
@@ -22,7 +22,7 @@ class**, +E agility.
 - Aircraft: its nose within 33.75 deg (0x1800) of the bearing to you, you closer than its missile range and farther than
   **8 - 2 x opp km** (Elite 2 km), alert > 0xC0. Starts at the fighter, 25 ft below it, on its heading/pitch, full speed;
   ttl twice as long (flies **2 x range**).
-- SA-14 cell: see FINDINGS "SA-14 cells"; starts at a random point in the cell, pitch 45 deg, 16 km of flight.
+- SA-14 cell: see [FINDINGS "SA-14 cells"](memory-map.md#flight-log-variables-fuel-damage-clock-ids-threats--egame-2026-10-18); starts at a random point in the cell, pitch 45 deg, 16 km of flight.
 - Memlog: SA-10 first-snapshot ttl 494 vs 500 predicted (fs 7); SA-14 86-89 vs 91 (fs 5).
 
 **Guidance every frame** (0x6af4, enemy branch 0x746b):
@@ -84,7 +84,7 @@ the beam). Turn = deg per game s (Green is lower: all capped at 2.8). "Beam km" 
 | 0x22-0x25 | AA-6 / AA-7 / AA-9 / AA-10 | no user found yet | -1, -1, -1, 0 | 50 / 34 / 82 / 64 | | | | |
 
 Not missiles: enemy **gunfire** (sim aircraft; air-to-air test |dX|+|dY|+|dAlt|/32 < (0x17a/fs)/(opp+1), IL-76 gun hits
-seen in logs; not decoded further) and your own **bomb blast** (FINDINGS). No AAA gun sites were found in the tables.
+seen in logs; not decoded further) and your own **bomb blast** ([FINDINGS](weapons.md#weapon-release-altitude-and-blast-damage--egame-2026-10-17)). No AAA gun sites were found in the tables.
 
 **What this means in practice:**
 - A SAM from 100+ km takes 2+ minutes and is guided only while its site keeps seeing you (until it is within 8 km).
