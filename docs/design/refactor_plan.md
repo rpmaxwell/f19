@@ -276,6 +276,15 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   `Clock` as its own commit, with the replay diffs explained.
 
 ### WP-8 HUD (subagent I)
+- **Widget structure in WP-8, content changes afterwards** (decided 2026-10-25). WP-8 rewrites the HUD as a Frame
+  consumer anyway, so it's built as a widget framework from the start:
+  - a `Widget` interface: `size hints`, `render(frame, box)`
+  - a layout engine: tiled regions, from a layout file chosen before flight
+  - an in-flight key to switch between saved layouts
+  - today's panes ported **1:1** as widgets, so `--replay` output matches the old HUD
+  
+  Deciding which data is useful, which is missing and which widgets to drop is a **fast follow** after WP-8, with the
+  user. The Frame is extensible, so new data needs a Frame field and a widget, nothing more.
 - `nav_tui` becomes a `TelemetrySink`: it draws Frames and never reads memory. `--replay` reads a `FlightStore` run. The
   score pane uses `rules/scoring`.
 
