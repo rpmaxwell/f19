@@ -30,11 +30,14 @@ Found in the re-read (not in the note before 2026-10-23):
     the ground (it ends by ttl, or by the terrain check).
   - Decoy key '5' (key code 0x635 -> 0x468f(3)); '1' flare, '2' chaff, '3' IR jammer, '4' radar jammer.
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import json, math, struct, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-_EG = (ROOT / "analysis/egame_re/EGAME.bin").read_bytes()
+_EG = S.egame_bin.read_bytes()
 DSF = 0x1ECF0
 
 # --- spec table (ds:4C10 + 0x12 x spec) -------------------------------------------------------------------------------
@@ -285,7 +288,7 @@ def load_snap(path):
     snap["t"] = float(Path(path).stem[5:]); return snap
 
 def load_run(run):
-    d = ROOT / "logs/memlog" / str(run)
+    d = S.logs / "memlog" / str(run)
     w = json.loads((d / "windows.json").read_text())
     if w["windows"][0][0] != "egame_data": return []
     return [s for s in (load_snap(f) for f in sorted(d.glob("snap_*.bin"))) if s]
@@ -396,7 +399,7 @@ def outcomes(runs, verbose=False):
 if __name__ == "__main__":
     import glob
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-    runs = sys.argv[2:] or sorted(Path(p).name for p in glob.glob(str(ROOT / "logs/memlog/*")))
+    runs = sys.argv[2:] or sorted(Path(p).name for p in glob.glob(str(S.logs / "memlog/*")))
     if cmd == "check":
         check(runs); outcomes(runs, verbose="-v" in sys.argv)
     elif cmd == "replay":

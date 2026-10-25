@@ -20,6 +20,9 @@ The extra game state is read about once a second (one pipelined PEEK batch per i
 
   nav_tui.py --replay logs/memlog/<id> [--route route.json] [--speed 4]   play a memlog flight in the display
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import json, math, os, re, select, shutil, struct, sys, time
 from pathlib import Path
 import numpy as np
@@ -191,7 +194,7 @@ class MapView:
         if route_dir and (Path(route_dir) / "terrain.npz").exists():
             t = np.load(Path(route_dir) / "terrain.npz")
             if "height_game" in t: self.H, self.step = t["height_game"], int(t["height_step"])
-        tz = Path(__file__).resolve().parent.parent / "logs/theater" / f"{theater}_terrain.npz"
+        tz = S.logs / "theater" / f"{theater}_terrain.npz"
         if self.H is None and theater and tz.exists():                 # theater-wide (analysis/terrain_3d.py)
             t = np.load(tz); self.H, self.step = t["height_ft"], int(t["step_wp"])
         self.trail, self.zoom, self.fit = [], 2, False
@@ -345,7 +348,7 @@ class UI:
         self.tel = Telemetry()
         self.names = {t["record"]: dict(place=t["place"], system=t.get("object", "")[:6]) for t in self.mission.get("targets", []) if t.get("record") is not None}
         self.names.update({r["record"]: r for r in self.mission.get("radars", []) if "record" in r})
-        tj = Path(__file__).resolve().parent.parent / "logs/theater" / f"{self.th}.json"
+        tj = S.logs / "theater" / f"{self.th}.json"
         self.place_xy = {(r["x"], r["y"]): r["name"] for r in json.load(open(tj))["records"] if r["name"]} if self.th and tj.exists() else {}
         spec = self.route.get("spec", {})
         self.settings = dict(spec.get("settings", {}))

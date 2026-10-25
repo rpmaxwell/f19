@@ -10,10 +10,13 @@ Found 2026-10-17 (see FINDINGS.md "Ordnance vs target strength"):
 
   ordnance.py              matrix + every theater's target types with their effective values
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import re, struct, subprocess, sys, tempfile
 from pathlib import Path
 
-GAME = Path("~/Documents/F-19 Stealth Fighter/MPS/F19").expanduser()
+GAME = S.game_dir
 WLD = {"CE": "CE.WLD", "NC": "NC.WLD", "LB": "LIBYA.WLD", "PG": "GULF.WLD"}
 NCAT = 13
 

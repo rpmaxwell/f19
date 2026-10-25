@@ -17,11 +17,14 @@ Shapes (.3D3) are vertex lists in the same LOD-local units, z = height.
 
   terrain_3d.py [NC|CE|LB|PG]   -> logs/theater/<TH>_mountains.json + <TH>_terrain.png
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import json, struct, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME = Path.home() / "Documents/F-19 Stealth Fighter/MPS/F19"
+GAME = S.game_dir
 SHIFT = {0: -1, 1: 0, 2: 2, 3: 4, 4: 6}          # LOD-local units -> position units
 POS_PER_KM = 2048
 FT_PER_POS = 1000 / POS_PER_KM * 3.28084          # ~1.6 ft per position unit
@@ -257,7 +260,7 @@ class World:
 def crash_check(th, W=None):
     """Known crash sites (logs/theater/<TH>_obstacles.json) -> solids containing each."""
     W = W or World(th)
-    f = ROOT / "logs/theater" / f"{th}_obstacles.json"
+    f = S.logs / "theater" / f"{th}_obstacles.json"
     out = []
     for o in (json.load(open(f))["obstacles"] if f.exists() else []):
         alt = o.get("alt_ft", 0)
@@ -270,7 +273,7 @@ def write_outputs(th):
     from PIL import Image, ImageDraw
     W = World(th)
     H = W.heightfield(step=16)
-    out = ROOT / "logs/theater"; out.mkdir(parents=True, exist_ok=True)
+    out = S.logs / "theater"; out.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out / f"{th}_terrain.npz", height_ft=H.astype(np.uint16), step_wp=16)
     mts = []
     for (lod, col, row, x, y, z, shape), verts, faces in W.solid_objects():
@@ -295,7 +298,7 @@ def write_outputs(th):
     rgb[small == 0] = (25, 45, 70)
     img = Image.fromarray(rgb.astype(np.uint8)); d = ImageDraw.Draw(img)
     S = img.size[0] / 0x8000
-    place = ROOT / "logs/theater" / f"{th}.json"
+    place = S.logs / "theater" / f"{th}.json"
     if place.exists():
         for r in json.load(open(place))["records"]:
             if r["name"] and r["kind"] == 0 and 0 < r["x"] < 0x8000 and 0 < r["y"] < 0x8000:

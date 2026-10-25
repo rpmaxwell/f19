@@ -9,6 +9,9 @@ own waypoints are read live from phys 0x403CA. With --alt the same automation
 connection also holds altitude with >=0.5 s up/down presses (the port serves
 one client at a time). Logs every cycle to logs/nav/<start>.csv.
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import argparse, csv, json, math, signal, struct, sys, time
 # Stop cleanly on SIGTERM / SIGINT even when started in the background (a non-interactive shell's `&` ignores SIGINT,
 # and a kill -9 mid-read left replies queued for the next client): both raise KeyboardInterrupt -> finally releases keys.
@@ -50,8 +53,8 @@ if args.strafe:
     if args.alt is None: args.alt = float(phases.GunAttack.ENTRY_FT)
 
 K = 64.0                                                   # table units per km
-cal = np.array(json.load(open(ROOT / "logs/calib/calibration_v2.json"))["briefing_px_to_table_units_affine"])
-sites = json.load(open(ROOT / "logs/radar_sites/sites.json"))
+cal = np.array(json.load(open(S.logs / "calib/calibration_v2.json"))["briefing_px_to_table_units_affine"])
+sites = json.load(open(S.logs / "radar_sites/sites.json"))
 SX = float(np.nanmedian([s["px_per_km_x"] for s in sites])); SY = float(np.nanmedian([s["px_per_km_y"] for s in sites]))
 def plan_km_to_game(kx, ky):                               # planner km -> briefing px -> game units
     return tuple(np.array([kx * SX + 32, ky * SY + 96, 1.0]) @ cal)
@@ -168,7 +171,7 @@ def terrain_ahead(p, hdg, alt, max_km=6.0, half_width_km=0.5, margin_ft=100):
     return None
 
 # Runtime altitude target: write a number (ft) to logs/nav/ALT to change the hold mid-flight.
-ALT_FILE = ROOT / "logs/nav/ALT"; ALT_FILE.unlink(missing_ok=True)
+ALT_FILE = S.logs / "nav/ALT"; ALT_FILE.unlink(missing_ok=True)
 # Radar sites of this mission (route dir's mission_mem.json from read_mission.py) for the display.
 RADARS = []
 if args.route and (Path(args.route).parent / "mission_mem.json").exists():
@@ -230,13 +233,13 @@ class MemLog:
         off = find_offset(db)
         self.windows = [("egame_data", 0x3C000 + off, 0x48000 + off)]
         full = self._read(db, 0x0, 0xA0000)
-        GAME = Path("~/Documents/F-19 Stealth Fighter/MPS/F19").expanduser()
+        GAME = S.game_dir
         for th in ("CE", "NC", "LIBYA", "GULF"):
             wf = GAME / f"{th}.WLD"
             if not wf.exists(): continue
             w = wf.read_bytes(); i = full.find(w[0x38:0x3E])
             if i >= 0: self.windows.append((f"world_{th}", (i - 0x38) & ~0x3F, ((i - 0x38) & ~0x3F) + 0xC00))
-        self.dir = ROOT / "logs/memlog" / str(int(time.time())); self.dir.mkdir(parents=True, exist_ok=True)
+        self.dir = S.logs / "memlog" / str(int(time.time())); self.dir.mkdir(parents=True, exist_ok=True)
         json.dump({"offset": off, "windows": self.windows}, open(self.dir / "windows.json", "w"), indent=1)
         self.addrs = [a for _, lo, hi in self.windows for a in range(lo, hi, 64)]
         self.pos, self.buf, self.t0 = 0, bytearray(), time.time()
@@ -260,8 +263,8 @@ class MemLog:
                 self.pos, self.buf, self.t0 = 0, bytearray(), time.time()
                 return
 
-(ROOT / "logs/nav").mkdir(exist_ok=True)
-_logf = open(ROOT / f"logs/nav/{int(time.time())}.csv", "w", newline="", buffering=1)
+(S.logs / "nav").mkdir(exist_ok=True)
+_logf = open(S.logs / f"nav/{int(time.time())}.csv", "w", newline="", buffering=1)
 class _SafeLog:                                         # a full disk must never stop the autopilot
     def __init__(self, w): self.w, self.ok = w, True
     def writerow(self, r):
@@ -317,7 +320,7 @@ fighters = phases.FighterWatch((lambda x_, y_: (_gbyte(x_, y_) >> 2) & 3) if _gb
 mwatch, cmkeys, msnap, missile_saved_kt, missile_full, m_key = None, missile_watch.CmKeys(), None, None, False, ""
 from f19_state import read_missile_world
 thr = phases.Throttle(); tko = attack = landing = gun = None; strafe_q = []; attacks_done = {r for r in args.done.split(",") if r}; phase_log = []
-_evf = open(ROOT / f"logs/nav/{Path(_logf.name).stem}.events.txt", "w", buffering=1)   # mission log, written as it happens
+_evf = open(S.logs / f"nav/{Path(_logf.name).stem}.events.txt", "w", buffering=1)   # mission log, written as it happens
 def phase_event(m):
     phase_log.append(m)
     try: _evf.write(m + "\n")

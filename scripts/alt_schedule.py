@@ -9,11 +9,14 @@ Stop by creating logs/nav/ALT_STOP.
 
   alt_schedule.py <mission_mem.json> [LOW] [HIGH]
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import csv, json, math, sys, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NAV = ROOT / "logs/nav"; ALT, STOP = NAV / "ALT", NAV / "ALT_STOP"
+NAV = S.logs / "nav"; ALT, STOP = NAV / "ALT", NAV / "ALT_STOP"
 STOP.unlink(missing_ok=True)
 M = json.load(open(sys.argv[1]))
 LOW = float(sys.argv[2]) if len(sys.argv) > 2 else 400.0

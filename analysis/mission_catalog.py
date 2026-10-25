@@ -12,11 +12,14 @@ A mission can occur in theater t when bit t of its theater_mask is set (0 Libya,
 
   python3 analysis/mission_catalog.py [out.md]
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import json, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME = Path("~/Documents/F-19 Stealth Fighter/MPS/F19").expanduser()
+GAME = S.game_dir
 THEATERS = [("Libya", "LIBYA.WLD"), ("Persian Gulf", "GULF.WLD"), ("North Cape", "NC.WLD"), ("Central Europe", "CE.WLD")]
 # Types 5-8 are not in the old notes; all their texts are "shoot down a plane in flight".
 TASK = {5: "intercept (5)", 6: "intercept (6)", 7: "intercept (7)", 8: "intercept (8)"}
@@ -69,7 +72,7 @@ def categories(wld):
     return cats
 
 def main(out):
-    table = json.load(open(ROOT / "logs/theater/missions.json"))["missions"]
+    table = json.load(open(S.logs / "theater/missions.json"))["missions"]
     text = briefings()
     cats = [categories(f) for _, f in THEATERS]
     rows, never = [], []

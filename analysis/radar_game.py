@@ -6,10 +6,13 @@ detection", 2026-10-18). Integer arithmetic as the game does it, so it can be ch
 Units: positions in waypoint units (64 per km), distances = game metric max + min/2, alt ft, angles 65536 = 360 deg,
 heading 0 = north, clockwise. opp 0 Green .. 3 Elite; war = ds:4EF2 (gameData+0x3A, 0 in every flight so far).
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import glob, math, struct, sys
 from pathlib import Path
 
-EGAME = Path(__file__).resolve().parent / "egame_re" / "EGAME.bin"
+EGAME = S.egame_bin
 DS_FILE = 0x1ECF0
 _EG = EGAME.read_bytes()
 
@@ -176,6 +179,6 @@ def _check(dirs):
 if __name__ == "__main__":
     if sys.argv[1:2] == ["check"]:
         _check_np()
-        _check(sys.argv[2:] or sorted(glob.glob(str(Path(__file__).resolve().parent.parent / "logs/memlog/*"))))
+        _check(sys.argv[2:] or sorted(glob.glob(str(S.logs / "memlog/*"))))
     else:
         print(__doc__)

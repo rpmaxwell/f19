@@ -8,6 +8,9 @@ All positions in game units (waypoint-table units, 64 per km). Sources:
                                   (0 mountain, 1 rough, 2 flat, 3 sea: radar clutter), bit 4 SA-14 cell
   plan.json "settings"            opponent / war / night (radar and SA-14 rules), roe (score)
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[2] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import json, math, subprocess, sys
 from pathlib import Path
 import numpy as np
@@ -57,7 +60,7 @@ class World:
         self.war = int(settings.get("war", 0))          # gameData+0x3A, 0 in every flight so far
         self.night = bool(settings.get("night", False)) # ds:4EF4 (briefing); day = SA-14 cells live
         self.roe = int(settings.get("roe", 0))
-        tz = ROOT / "logs/theater" / f"{theater}_terrain.npz"
+        tz = S.logs / "theater" / f"{theater}_terrain.npz"
         if not tz.exists():
             subprocess.run([sys.executable, str(ROOT / "analysis/terrain_3d.py"), theater], check=True)
         z = np.load(tz)

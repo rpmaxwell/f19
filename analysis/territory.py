@@ -11,12 +11,15 @@ Low two bits: 3 = friendly (NATO), 2 = neutral, 0 = enemy (scores; ejecting = ca
   territory.py <TH>          print the grid
   from territory import side  side(TH, x, y) -> "friendly" | "neutral" | "enemy" | "1?"
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import re, sys
 from functools import lru_cache
 from pathlib import Path
 import numpy as np
 
-GAME = Path("~/Documents/F-19 Stealth Fighter/MPS/F19").expanduser()
+GAME = S.game_dir
 WLD = {"CE": "CE.WLD", "NC": "NC.WLD", "LB": "LIBYA.WLD", "PG": "GULF.WLD"}
 SIDE = {3: "friendly", 2: "neutral", 0: "enemy", 1: "1?"}
 

@@ -2,13 +2,16 @@
 (no rescan) 20x a second; when a load changes it, at once releases the arrows in DOSBox (cancels a saved auto-repeat),
 sends the arrow BREAK codes to the game (clears its held-key state), centres the stick (keypad 5), then logs attitude for
 30 s to logs/probe/fix_<t>.csv. Waits up to 5 min.  fix_after_load.py [offset_hex, default 0x10420]"""
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import struct, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dosbox_automation import Dosbox
 from f19_state import _peek_many, POS, ALT, PITCH
 OFF = int(sys.argv[1], 16) if len(sys.argv) > 1 else 0x10420
-ROOT = Path(__file__).resolve().parent.parent; out = open(ROOT / f"logs/probe/fix_{int(time.time())}.csv", "w", buffering=1)
+ROOT = Path(__file__).resolve().parent.parent; out = open(S.logs / f"probe/fix_{int(time.time())}.csv", "w", buffering=1)
 out.write("t,alt,pitch,x,y\n")
 def rd(db):
     p, a, pr = _peek_many(db, [(POS + OFF, 10), (ALT + OFF, 2), (PITCH + OFF, 2)])

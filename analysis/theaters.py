@@ -7,11 +7,14 @@ The game's files are CE.WLD, NC.WLD, LIBYA.WLD and GULF.WLD.
   code("Persian Gulf") -> "PG";  wld_bytes("PG") -> GULF.WLD bytes
   places("PG") -> logs/theater/PG.json (generated from the .WLD on first use)
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import json, re, struct
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME = Path("~/Documents/F-19 Stealth Fighter/MPS/F19").expanduser()
+GAME = S.game_dir
 WLD_FILE = {"CE": "CE.WLD", "NC": "NC.WLD", "LB": "LIBYA.WLD", "PG": "GULF.WLD"}
 ALIASES = {"CENTRAL EUROPE": "CE", "EUROPE": "CE", "NORTH CAPE": "NC", "LIBYA": "LB",
            "GULF": "PG", "PERSIAN GULF": "PG"}
@@ -46,7 +49,7 @@ def parse_wld(th):
 
 def places(th):
     """logs/theater/<TH>.json, written from the .WLD if it doesn't exist yet."""
-    th = code(th); f = ROOT / "logs/theater" / f"{th}.json"
+    th = code(th); f = S.logs / "theater" / f"{th}.json"
     if not f.exists():
         f.parent.mkdir(parents=True, exist_ok=True)
         json.dump(parse_wld(th), open(f, "w"), indent=1)

@@ -9,6 +9,9 @@ route.png) and prints the report and the nav command. --extra-fuel is the number
 (0-3): pick it after the briefing and the ordnance screen; nav transfers one whenever fuel drops below 500 lb.
 Change it later by editing "extra_fuel" in plan.json and running `python analysis/planner <dir>` again.
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[2] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import argparse, json, subprocess, sys, time
 from pathlib import Path
 
@@ -32,7 +35,7 @@ def main():
     ap.add_argument("--out", help="plan directory (default logs/plan/<theater>_<place>_<time>)")
     a = ap.parse_args()
 
-    tmp = ROOT / "logs/plan/_briefing_read.json"
+    tmp = S.logs / "plan/_briefing_read.json"
     if a.mission_file:
         M = json.load(open(a.mission_file))
     else:
@@ -44,7 +47,7 @@ def main():
     if any(t["role"].endswith("?") for t in M["targets"]) or "takeoff" not in M:
         sys.exit("the mission read has no briefing data (roles end in '?'): read it on the briefing screen, not in flight")
     place = M["targets"][0]["place"].lower().replace(" ", "_") if M["targets"] else "mission"
-    D = Path(a.out) if a.out else ROOT / "logs/plan" / f"{a.theater.lower()}_{place}_{time.strftime('%m%d_%H%M')}"
+    D = Path(a.out) if a.out else S.logs / "plan" / f"{a.theater.lower()}_{place}_{time.strftime('%m%d_%H%M')}"
     D.mkdir(parents=True, exist_ok=True)
     json.dump(M, open(D / "mission_mem.json", "w"), indent=1)
     tk = M["takeoff"]

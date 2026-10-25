@@ -8,6 +8,9 @@ Logs every cycle to logs/gun/<time>.csv and prints:
 
   gun_probe.py [--target 9920,13120] [--floor 150]
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import argparse, csv, math, struct, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,7 +53,7 @@ def main():
     while True:                                               # wait for EGAME (briefing / takeoff screens)
         try: o = find_offset(db); break
         except RuntimeError: print("waiting for EGAME...", flush=True); time.sleep(3)
-    out = Path(__file__).resolve().parent.parent / "logs" / "gun"; out.mkdir(parents=True, exist_ok=True)
+    out = S.logs / "gun"; out.mkdir(parents=True, exist_ok=True)
     f = open(out / f"{int(time.time())}.csv", "w", newline=""); w = csv.writer(f)
     w.writerow("t alt pitch hdg x y rounds fs ccip_x ccip_y ccip_d imp_x imp_y event".split())
     print(f"logging to {f.name}", flush=True)

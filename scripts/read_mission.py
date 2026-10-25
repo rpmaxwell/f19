@@ -30,6 +30,9 @@ Save the briefing-time json for the plan. It carries "takeoff_heading" (0 / 180 
 
   read_mission.py [--snapshot FILE] [--out logs/missions/<time>.json] [--missions logs/theater/missions.json]
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import argparse, json, struct, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -37,7 +40,7 @@ sys.path.insert(1, str(Path(__file__).resolve().parent.parent / "analysis"))
 import theaters  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME = Path("~/Documents/F-19 Stealth Fighter/MPS/F19").expanduser()
+GAME = S.game_dir
 RADAR = {1: ("SA-2", "P", 37), 2: ("SA-5", "P", 43), 3: ("SA-8B", "P", 39), 4: ("SA-10", "D", 140),
          5: ("SA-11", "P", 62), 6: ("SA-12", "D", 108), 7: ("SA-13", "P", 23),
          8: ("SA-N-4", "D", 50), 9: ("SA-N-5", "P", 28), 11: ("SA-N-7", "P", 62), 21: ("OTH", "D", 156)}
@@ -229,7 +232,7 @@ if __name__ == "__main__":
     m = parse(mem, a.theater)
     m["theater"] = a.theater
     print(f"theater {a.theater}")
-    out = Path(a.out) if a.out else ROOT / "logs/missions" / f"{int(time.time())}.json"
+    out = Path(a.out) if a.out else S.logs / "missions" / f"{int(time.time())}.json"
     out.parent.mkdir(parents=True, exist_ok=True); json.dump(m, open(out, "w"), indent=1)
     print(f"world copy at phys {m['world_copy_phys']:05X}  -> {out}")
     if "times" in m: print(f"  {m['setup']} mission, begins {m['times']['start']}"

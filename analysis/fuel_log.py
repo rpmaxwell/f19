@@ -14,6 +14,9 @@ share of each setting, airborne game minutes, fuel used (measured) vs the burn r
 throttle time (fuel_model.burn_step), distance flown, mean indicated kt and the ground/indicated ratio.
 Memory offsets (ds, file index = ds - 0x490) as analysis/radar_game.py; FINDINGS.md "Flight-log variables".
 """
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import glob, json, math, struct, sys
 from collections import defaultdict
 from pathlib import Path
@@ -22,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fuel_model import burn_step  # noqa: E402
 
-OUT = ROOT / "logs/fuel"
+OUT = S.logs / "fuel"
 CLOCK, FUEL, THR, ALT, KT27, PX, PY, FLAGS = 0x6630, 0x4ED0, 0x46F2, 0x46E0, 0x7F94, 0x94EE, 0x94FE, 0x684C
 FLAPS, GEAR_UP = 0x02, 0x01
 
@@ -109,7 +112,7 @@ if __name__ == "__main__":
     elif a[0] == "summary": summary()
     elif a[0] == "all":
         done = {p.stem for p in OUT.glob("*.json")} if OUT.exists() else set()
-        for d in sorted(glob.glob(str(ROOT / "logs/memlog/*/"))):
+        for d in sorted(glob.glob(str(S.logs / "memlog/*/"))):
             if Path(d).name in done: continue
             r = log_flight(d)
             print(f"{Path(d).name}: " + ("too short / no airborne data" if r is None else

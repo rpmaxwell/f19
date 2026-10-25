@@ -5,6 +5,9 @@ mode, with nav's own wanted heading at that moment (logs/nav/<run>.csv, nearest 
 
 Prints the module's events (launch seen, prediction, chosen action) and, per missile, the first prediction against
 the real outcome (damage count up by opp + 1 while it was live = hit)."""
+import sys as _sys; from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
+from f19.core.settings import settings as S  # noqa: E402
 import bisect, csv, sys, time
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,7 +16,7 @@ import missile_game as G
 from missile_watch import MissileWatch
 
 def nav_want(run):
-    navs = sorted(ROOT.glob("logs/nav/[0-9]*.csv"), key=lambda p: abs(int(p.stem) - int(run)))[:1]
+    navs = sorted(S.logs.glob("nav/[0-9]*.csv"), key=lambda p: abs(int(p.stem) - int(run)))[:1]
     T, W = [], []
     for r in csv.DictReader(open(navs[0])) if navs else []:
         try: T.append(float(r["t"])); W.append(float(r["want"]))

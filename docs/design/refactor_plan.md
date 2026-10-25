@@ -177,8 +177,10 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
 
 ### WP-1 Safety net (subagent A)
 - `planner/checks.py` and the `radar_game` / `missile_game` checks → pytest.
-- **Golden planner tests:** two plan dirs (one CE strike, the PG one), re-planned and compared field by field with
-  their `route.json`. Marked `slow` (3-8 min each).
+- **Golden planner tests:** re-plan frozen plan dirs and compare field by field with their `route.json`. Marked `slow`.
+  `ce_budejovice_1023_1811` reproduces exactly (checked in WP-0; 10 min). `pg_shiraz_1024_1514` does **not**: the
+  baseline code fails on it with `PlanError: no usable attack bearing`, so its route.json came from a different code
+  state or command. Pick a second golden that reproduces (a short CE or NC plan), and log the PG failure as a known bug.
 - **Replay harness:** feed memlog runs through a `ReplayReader` (built from `SnapDB`) and compare each reaction's
   decisions with the logged nav CSV columns (`want`, `m_action`, phase). Builds on `missile_replay`. Pick 3-4 runs that
   cover takeoff, an attack, a missile and terrain escape; copy them to `F19_DATA/fixtures`.
@@ -281,6 +283,18 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
 - `abort_attack` from MissileWatch is never read by nav (nav uses `m_hold`).
 - `plan.py:694 takeoff_heading` is dead code; `parse_theater.py` runs at import.
 - `GROUND_PER_KT` 0.788 vs `fuel_model`'s 1.852 with no ground factor.
+- `pg_shiraz_1024_1514` no longer plans: `PRIMARY: Airplane Shiraz: no usable attack bearing (… no path from
+  (17616,10988) to (8000,9536))`, on the baseline code as well.
+
+## WP-0 status (2026-10-24, done)
+- f19 is its own repo (`main`); the baseline commit holds the tree as it was.
+- Data is in `~/f19-data` (`logs/`, `dumps/`, `saves/`, `raw/`, `game/EGAME.bin` + `END.bin`, `attic/`). The DOSBox-X
+  config's `logfile` now points there.
+- Research is in `research/`; `f15se2-re` is at `~/projects/f15se2-re`.
+- `pyproject` is `f19` (src layout, uv, pytest); `src/f19/core/settings.py` holds the paths. Product scripts insert
+  `src/` into `sys.path` until the package move.
+- Checked: `nav.py --help`, `planner/checks.py`, all product imports, `nav_tui --replay`, `radar_game check`,
+  `missile_game check` (64/64), the Budejovice golden (identical route.json).
 
 ## 8. Decisions needed before WP-0
 1. **Git:** make f19 its own repo (recommended), or track it inside `~/projects`?
