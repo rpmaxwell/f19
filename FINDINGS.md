@@ -178,6 +178,24 @@ Ramstein -> Rhein-Main). `scripts/read_mission.py` decodes it (output e.g.
      (airstrip-lighting window end). dist is in 64/km units, so code-bit-1 deadline = start + 15 min
      + 8 s per km. Live check 2026-10-17: mission 51 (type 7) had B956 = 0 and the start and deadline both
      10:00, with the An-72 "leaving from Tabor airbase at 10:00"; type 7 is a race from mission start.
+- **Fuel estimate = mission length** (2026-10-24, START cs:7A04 / 845B): the generator writes 16 x L to
+  commData+0x2e (far ptr ds:D066), L = takeoff->primary + primary->secondary + secondary->landing km. The briefing
+  ("FUEL ESTIMATE") and arming ("Fuel Est.") print that word, and END scores it (x9/8 from 7000, x10/8 from 9000,
+  x11/8 from 11500 lb). So the buckets are L < 438 / 438-562 / 563-718 / >= 719 km. Checked: Fuel Est. 9,152 = 572 km.
+  The accept rule is L <= 740 + attempts, and the attempt counter goes to 999, so L can pass 900 km (CE).
+- **Rerolling** (2026-10-24): options menu "Select New Mission" (item 0) sets ds:CA6A = 1 (cs:CE1C) and returns to
+  the duty roster; pilot -> Mission Assignment -> "Accept assignment" -> the briefing entry (cs:B5F0) clears four flags,
+  calls the generator (76C8), clears CA6A, then **draws more random numbers** at cs:B61C-B72E (random(3) records get
+  flagged, some of them zeroed). Nothing else between rerolls touches rand. Running 76C8 + B61C-B72E in unicorn on a
+  memory image reproduced all 34 live rerolls that day in order. A fresh briefing room opens with Mission Targets
+  selected (targets flashing): arrows queue until Selector, Selector twice returns with the cursor on Exit Briefing
+  Rm. Exit leads to arming, "Arming Complete" to the options menu (cursor on Begin Mission). Esc on the roster erases
+  the pilot. `scripts/mission_finder.py` does all of this.
+- **Turbo for rerolls** (2026-10-24): DOSBox-X CPU menu "Turbo (fast-forward)" (mapper_speedlock2, `ticksLocked`)
+  runs emulated time 29x real time at 3000 cycles/ms (BIOS tick 0040:006C: 535/s vs 18.2). It can be clicked and
+  read (AXMenuItemMarkChar) through System Events without focusing the window, and keys from the automation socket
+  don't cancel it ("stop turbo on key" only sees SDL key events). Under turbo a 0.1 s key hold is ~3 s of game time,
+  past the typematic delay, so taps must be bare press/release. A reroll takes 2.0 s, down from 22 s.
 - nav.py's "route belongs to this mission" check now compares the `slots` (still in memory in flight)
   rather than the targets.
 
