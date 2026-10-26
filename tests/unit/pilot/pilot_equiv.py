@@ -212,15 +212,16 @@ class Report:
         if not ok and not self.first_diff: self.first_diff = f"tick {self.ticks}: {what}"
 
 
-def run_phase(old, new, ticks, old_step, extra=None, synthetic=True, after=None, allow_order=False):
+def run_phase(old, new, ticks, old_step, extra=None, synthetic=True, after=None, allow_order=False, db=None):
     """Step OLD and NEW phases on the same ticks; compare keys, overrides, the speed target, log lines.
     ticks: iterable of (t, w-or-db-loader) yielding (t, w) for synthetic worlds (a generator may read `last_keys`).
     old_step(old, db, w, t) -> ov.  extra(behavior) -> a comparable tuple (state, counters, ...); .key is added.
+    db: the old side's connection (default OldDB; replay: a recording SnapDB, with synthetic=False).
     allow_order: count a tick whose keys differ only in order as equal (listed in Report.order_only).
     after(w, keys, t, ov): closed loop - the world's response to the (old) keys and overrides of the tick."""
     rep = Report()
     ctx = FlightContext(ManualClock(0.0)); ctrl = FakeControls(ctx)
-    db = OldDB()
+    db = OldDB() if db is None else db
     thr = getattr(old, "thr", None)
     ctrl.speed = thr.target if thr is not None else None
     with OldPhases(synthetic) as op:
@@ -273,3 +274,25 @@ def deep(x): return copy.deepcopy(x)
 def flat_state(alt, spd, hdg, x, y, **kw):
     """A GameState from nav-CSV style inputs (units)."""
     return GameState(t=None, pos=Position(x, y, alt), att=Attitude(hdg), speed_kt=spd, **kw)
+
+
+class RecSnapDB(KeyLog):
+    """tests/replay/harness.SnapDB (PEEKs answered from a memlog snapshot) with KeyLog's recording."""
+    def __init__(self, run):
+        import harness as H
+        super().__init__()
+        self.snap = H.SnapDB(run.windows)
+        product.f19_state()._offset[id(self)] = run.offset
+        product.f19_state()._events.pop(id(self), None)
+    def load(self, raw, now=0.0): self.snap.load(raw, now)
+    def _send(self, cmd): self.snap._send(cmd)
+    def _recv_line(self): return self.snap._recv_line()
+    def peek(self, seg, off, n): return self.snap.peek(seg, off, n)
+
+
+def snapshot_world(db, records=()):
+    """The dicts the old readers give on the loaded snapshot -> a world (as `world()`), for gamestate()."""
+    fs = product.f19_state()
+    s = fs.read_state(db, tries=1)
+    return dict(s=s, f=fs.read_flight(db), ts=1.0, trackcam=fs.read_trackcam(db), events=fs.read_events(db),
+                projectiles=fs.read_projectiles(db), targets={r: fs.read_target(db, r) for r in records})
