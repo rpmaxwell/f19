@@ -19,7 +19,9 @@ from f19.core.clock import ManualClock
 from f19.core.types import Attitude, GameState, Position, Route, RoutePoint, Systems
 from f19.memory import ReplayReader
 from f19.memory import reader as MR
-from f19.pilot.runner import MemLog, Reads, parse_missile_world, terrain_ahead_probe
+from f19.pilot.runner import MemLog, Reads
+from f19.rules.missiles import parse_missile_world
+from f19.rules.terrain import terrain_ahead_probe
 from f19.telemetry import EXTENDED_COLUMNS
 
 need_fix = pytest.mark.skipif(not H.have_fixtures(), reason="replay fixtures missing")

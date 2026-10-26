@@ -11,6 +11,7 @@ from functools import lru_cache
 
 from f19.core.geometry import atan2_angle16
 from f19.gamedata.exe import DS_FILE, egame
+from f19.gamedata.radar_systems import BRIEFING_RADARS
 
 
 @lru_cache(None)
@@ -28,6 +29,17 @@ def sam_range_km(t):
 def weapon_name(spec):
     """Name of weapon spec `spec` (ds:4C10 + 0x12 spec, 8 bytes), '' if empty."""
     return egame()[DS_FILE + 0x4C10 + 0x12 * spec:][:8].split(b"\0")[0].decode("latin1")
+
+
+def radar_systems():
+    """{radar code: (system, "P" / "D", range km)} for codes 1-15 and the briefing codes: gamedata's briefing table, the
+    other codes from EGAME (name, pulse / doppler from radar_spec, the SAM's missile range)."""
+    out = dict(BRIEFING_RADARS)
+    for t in range(1, 16):
+        if t not in out:
+            _, _, dop = radar_spec(t)
+            out[t] = (weapon_name(t), "D" if dop else "P", sam_range_km(t))
+    return out
 
 
 AIRCRAFT_SPEED_PER_UNIT = 0.208     # measured game m/s per unit of the +0x12 max speed (memlog: MiG-31 790 -> 164 m/s,

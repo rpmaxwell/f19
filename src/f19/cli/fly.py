@@ -58,7 +58,7 @@ class RecordingEmulator:
 class _World:
     """f19.memory.mission.World over the game's .WLD files (read_mission.World)."""
     def __init__(self):
-        from f19.cli.hud import radar_systems
+        from f19.rules.radar import radar_systems
         self.R = radar_systems()
     def wld_bytes(self, th):
         try: return wld.wld_bytes(th)

@@ -231,3 +231,42 @@ def simulate(m, w, traj, frames, cm_plan=None, on_frame=None, stop_spent=True):
         if out: return dict(r, outcome=out)
         if stop_spent and m.ttl <= 4 * w.fs: return dict(r, outcome="spent")
     return dict(outcome="flying", frame=frames, closest=closest, closest_locked=closest_l, locked_frames=locked_n, last_why=why, m=m)
+
+
+# ---- the raw-memory world decoder (was a copy in pilot/runner.py) ----
+# analysis/missile_game.parse's layout (ds offsets)
+PROJ, CMS, STORES, OPP, FS, FLAGS, NET_T, NET_REF, HOMING = 0x53FC, 0x520A, 0x4ED4, 0x4EF0, 0x4EFC, 0x684C, 0x5522, 0x6EAA, 0x7F96
+PX, PY, PALT, PHDG, PPITCH, PROLL, PKT27, CLOCK, DMG_BITS, DMG_COUNT = 0x94EE, 0x94FE, 0x46E0, 0x46DA, 0x46DC, 0x46DE, 0x7F94, 0x6630, 0x4ECE, 0x95BE
+TARGETS, N_TARGETS, SIMOBJ, FRAME, GRID = 0x80AA, 0x9C78, 0x8854, 0x5520, 0x85FC
+
+
+def parse_missile_world(get):
+    """analysis/missile_game.parse (moved here; tests/unit/rules checks it against the original): get(ds, n) -> bytes. -> dict(missiles, player, world, stores, sites,
+    aircraft, grid, clock, dmg, homing, frame) - GameState.missile_world, what MissileWatch / CmKeys read."""
+    u = lambda a: struct.unpack("<H", get(a, 2))[0]
+    s = lambda a: struct.unpack("<h", get(a, 2))[0]
+    raw = get(PROJ, 0x18 * 8)
+    ms = []
+    for i in range(8):
+        x, y, alt, spd, hdg, pit, _roll, ttl, sp, _t, _x14, lau = struct.unpack_from("<hhhhHhhhhhhh", raw, 0x18 * i)
+        if ttl > 0 and 0 < sp < 0x26: ms.append(Missile(i, x, y, alt, spd, hdg, pit, ttl, sp, lau))
+    cmr = get(CMS, 48)
+    cms = [list(struct.unpack_from("<hhhhhh", cmr, 12 * j)[k] for k in (0, 1, 3, 4)) for j in range(4)]
+    n = min(u(N_TARGETS), 120)
+    recs = get(TARGETS, 16 * n)
+    sites = {}
+    for k in range(n):
+        x, y, t, fl, al, cd = struct.unpack_from("<HHHHHh", recs, 16 * k + 2)
+        if t: sites[k] = dict(record=k, x=x, y=y, type=t, flags=fl, alert=al, countdown=cd, dead=bool(fl & 0x80),
+                              on=bool(fl & 2), seen=bool(fl & 0x10))
+    sim = get(SIMOBJ, 0x24 * 20)
+    aircraft = {}
+    for k in range(20):
+        x, y, alt = struct.unpack_from("<HHH", sim, 0x24 * k)
+        typ, fl = struct.unpack_from("<HH", sim, 0x24 * k + 0x14)
+        al = struct.unpack_from("<H", sim, 0x24 * k + 0x20)[0]
+        if x or y: aircraft[k] = dict(slot=k, x=x, y=y, alt=alt, type=typ, flags=fl, alert=al, seen=bool(fl & 8))
+    player = dict(x=u(PX), y=u(PY), alt=s(PALT), hdg=u(PHDG), pitch=s(PPITCH), roll=s(PROLL), kt=u(PKT27) // 27)
+    world = dict(opp=u(OPP), fs=u(FS), flags=u(FLAGS), net_stale=s(NET_T) < s(NET_REF), cms=cms, dmg_bits=u(DMG_BITS))
+    return dict(missiles=ms, player=player, world=world, stores=struct.unpack("<3H", get(STORES, 6)), sites=sites,
+                aircraft=aircraft, grid=bytes(get(GRID, 256)), clock=u(CLOCK), dmg=u(DMG_COUNT), homing=u(HOMING), frame=u(FRAME))

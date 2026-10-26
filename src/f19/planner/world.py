@@ -15,6 +15,7 @@ import numpy as np
 from f19.core import units
 from f19.core.settings import settings as S
 from f19.gamedata import terrain as _terrain
+from f19.gamedata.radar_systems import RADAR_NAMES
 from f19.gamedata.wld import grid as territory_grid, places
 from f19.rules import radar as _rr
 
@@ -32,16 +33,13 @@ GROUND_PER_KT = units.GROUND_PER_KT       # 0.788, pooled over 16 logged flights
 GROUND_KMH_PER_KT = units.GROUND_KMH_PER_KT   # map km per game hour per indicated kt (1.852 x 0.788)
 KT_KMH = GROUND_KMH_PER_KT                # the old name (NOT km/h per kt: ground km/h per indicated kt)
 
-# Radar system name -> radar type code, for mission files written before read_mission saved "kind". The same table
-# scripts/read_mission.RADAR builds (the briefing-map names, then EGAME's weapon names for the other codes 1-15);
-# f19.rules has no name table, so it is kept here.
-_RADAR_NAMES = {1: "SA-2", 2: "SA-5", 3: "SA-8B", 4: "SA-10", 5: "SA-11", 6: "SA-12", 7: "SA-13", 8: "SA-N-4",
-                9: "SA-N-5", 11: "SA-N-7", 21: "OTH"}
+# Radar system name -> radar type code, for mission files written before read_mission saved "kind": the briefing names
+# from f19.gamedata.radar_systems, then EGAME's weapon names for the other codes 1-15.
 
 
 def system_kinds():
     """{system name: radar type} (read_mission.RADAR order: later duplicates win, as there)."""
-    names = dict(_RADAR_NAMES)
+    names = dict(RADAR_NAMES)
     for t in range(1, 16):
         if t not in names: names[t] = _rr.weapon_name(t)
     return {sa: k for k, sa in names.items()}
