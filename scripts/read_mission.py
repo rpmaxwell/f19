@@ -67,7 +67,12 @@ MISSION_TABLE, N_MISSIONS = _A.START_MISSION_TABLE, _A.START_N_MISSIONS
 CATEGORY = _A.START_CATEGORY
 PILOT_PTR = _A.START_PILOT_PTR
 THEATER_INDEX = {0: "LB", 1: "PG", 2: "NC", 3: "CE"}   # EGAME's per-theater file table (lb/pg/nc/ce.xxx) is indexed by it
-takeoff_heading, start_ds, briefing, mission_table = _M.takeoff_heading, _M.start_ds, _M.briefing, _M.mission_table
+start_ds, briefing, mission_table = _M.start_ds, _M.briefing, _M.mission_table
+
+
+def takeoff_heading(theater_index, carrier):
+    """= f19.memory.mission.takeoff_heading (kept as a def: tests/unit/core checks this copy against core.theater)."""
+    return (0.0 if theater_index & 1 else 180.0) + (0x400 * 360 / 65536 if carrier else 0.0)
 
 
 class World:
