@@ -29,6 +29,8 @@ ALLOWED = {
     "telemetry": {"core"},
     "pilot": {"core", "rules", "memory", "emulator", "planner", "telemetry"},
     "hud": {"core", "rules", "telemetry"},
+    # the entry points sit on top: they may wire any layer together, and no layer imports them
+    "cli": {"core", "gamedata", "rules", "emulator", "memory", "planner", "telemetry", "pilot", "hud"},
 }
 FORBIDDEN_TOP = {"research"}            # never importable from the package
 # the flat product modules the package replaces: importing them from src/f19 would undo the move
