@@ -1,0 +1,38 @@
+# The HUD as scripts/nav_tui.py lays it out: map + log on the left, the state panes on the right; one column on
+# terminals narrower than 110 cells. `l` toggles the two. Format: src/f19/hud/layout.py.
+name = "default"
+panes = ["map", "nav", "radars", "aircraft", "fuel", "score", "log"]
+
+[[layout]]
+name = "two-column"
+min_width = 110
+fallback = "one-column"
+
+[[layout.columns]]
+size = "56%"
+min = 49
+rows = [
+  { widget = "map", min = 8, keep = true },
+  { widget = "log", size = 7, min = 3 },
+]
+
+[[layout.columns]]
+rows = [
+  { widget = "nav", size = 9, min = 5 },
+  { widget = "radars", min = 3 },
+  { widget = "aircraft", min = 2 },
+  { widget = "fuel", size = 5, min = 3 },
+  { widget = "score", size = 4, min = 3 },
+]
+
+[[layout]]
+name = "one-column"
+rows = [
+  { widget = "map", min = 10, keep = true },
+  { widget = "nav", size = 9, min = 5 },
+  { widget = "radars", min = 3 },
+  { widget = "aircraft", min = 2 },
+  { widget = "fuel", size = 5, min = 3 },
+  { widget = "score", size = 4, min = 3 },
+  { widget = "log", size = 5, min = 2 },
+]
