@@ -18,6 +18,7 @@ other file in the same directory). A layout is a tree: a leaf names a widget, an
     { rows = [{ widget = "nav", size = 9, min = 5 }, { widget = "radars", min = 3 }] },
   ]
 
+(TOML 1.0: an inline table must fit on one line; for longer nodes write [[layout.columns]] tables, as default.toml.)
 Node keys: `widget` (leaf) or `rows` / `columns` (children); `size` = wanted inner cells along the parent's axis
 (int), or a share of the parent ("56%": inner = max(min, int(span * 0.56) - 1), span = the parent's extent in cells,
 borders included); no size = flexible (shares what is left); `min` = fewest inner cells (default 1); `keep = true`
@@ -216,9 +217,11 @@ def load(name_or_path=None, layouts_dir=LAYOUTS_DIR):
         for q in sorted(p.parent.glob("*.toml")):
             if q == p: continue
             other = parse(q.read_text(), q.stem, q)
+            have = {x.name for x in ls.layouts}
             for l in other.layouts:
-                if l.name in ls.by_name: continue
+                if l.name in have: continue
                 ls.layouts.append(l); ls.by_name[l.name] = l
+            for l in other.layouts:                        # fallbacks resolve within their own file
                 if l.fallback and l.fallback not in ls.by_name: ls.by_name[l.fallback] = other.by_name[l.fallback]
     return ls
 
