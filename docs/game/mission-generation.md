@@ -64,3 +64,17 @@ How START generates a mission (targets, bases, mission numbers, deadlines, fuel 
     6 SA-12 D108, 7 SA-13 P23, 8 SA-N-4 D50, 9 SA-N-5 P28, 11 SA-N-7 P62, 21 OTH D156
 - `scripts/read_mission.py` decodes it; on mission 3's snapshot it reproduces
   the briefing exactly (2 targets, 21/21 radars incl. the eliminated Lukow and 4 boats).
+
+## Selecting a mission by seed (2026-10-25)
+
+- `f19.gamedata.mission_gen` (from mission_finder) emulates START cs:76C8 + cs:B61C-B72E under unicorn. `find_seed`
+  searches seeds offline for a wanted mission shape.
+- **Offline check:** `verify_image` steps the MS C rand state backwards from a saved START image and found the exact
+  starting state for both saved images: North Cape 2413 draws back, Central Europe 1495. Both the mission and the
+  image's final rand state are reproduced. The new Generator matches the old mission_finder one.
+- **Live sequence, not run yet:** POKE the u32 seed at ds:7A50, press Enter ×3 for Select New Mission (it assumes the
+  options menu with "Select New Mission" highlighted), then read the mission back (ds:CA6A and the briefing block) and
+  compare it with the prediction. This replaces the screenshot-checked reroll loop.
+- **Open:** START's menu and cursor variables aren't known yet; there are TODOs in `memory/addresses.py` and
+  `mission_gen.py`. Until they're found, menu moves are fixed key sequences checked only by memory reads.
+

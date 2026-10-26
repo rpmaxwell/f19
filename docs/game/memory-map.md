@@ -507,3 +507,17 @@ Score: types 6 / 7 cost -20 / -10 base in Cold War (END), so every ID is worth 2
 
 **HUD messages**: built in ds:65C6 then shown by 0x9192 (templates at ds:5540-5C00). ds:65C6 is also scratch for number
 formatting (a snapshot read back '0'), so polling it is not a message log; the event list and counters are the record.
+
+## Writing memory: the automation socket's POKE (2026-10-25)
+
+- The DOSBox-X fork (`~/projects/dosbox-x`, branch `f19-automation`, commit 0ec314d6c) has
+  `POKE <hex phys addr> <hex bytes>` (1-64 bytes, e.g. `POKE 9F000 DEADBEEF`). It always replies with exactly one
+  line: `POKE-REPLY OK <addr %05X> <n>` or `POKE-REPLY ERR <reason>`.
+- PEEKs and POKEs share one queue, so replies come back in request order. Writes run on the emulation thread through
+  `mem_writeb_checked`. Only guest RAM is accepted: below `MEM_TotalPages*4K` and outside A0000-FFFFF. Every write is
+  logged.
+- Client: `f19.emulator` `poke(phys, data)`, which reads the bytes back to check. Tested on a bare DOS prompt
+  (`dosbox-x -tests` 59/59, plus live round trips on port 6123/6124). **Not yet used on F-19.**
+- Only the mission selector writes memory (START's rand seed, see
+  [mission-generation](mission-generation.md#selecting-a-mission-by-seed-2026-10-25)); flight code never does.
+

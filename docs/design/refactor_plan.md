@@ -1,6 +1,6 @@
 # F-19 refactor plan
 
-Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9 (2026-10-25). This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
+Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
 read-only inventory of the current code (three parallel passes: pilot/runtime, planner/rules, research-vs-product).
 
 ## 1. Goals and non-goals

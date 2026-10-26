@@ -36,7 +36,8 @@ or restructuring anything, and keep behavior identical during moves; behavior fi
 - Data lives in `F19_DATA` (default `~/f19-data`: `logs/`, `dumps/`, `saves/`, `game/EGAME.bin`, ...), the game
   install in `F19_GAME_DIR` (default `~/Documents/F-19 Stealth Fighter/MPS/F19`). Both are read by
   `f19.core.settings`. **Never put data, logs, dumps or game files in the repo.**
-- Other settings: `F19_AUTOMATION_HOST` / `F19_AUTOMATION_PORT` (default 127.0.0.1:6000). The port serves one
+- Other settings: `F19_AUTOMATION_HOST` / `F19_AUTOMATION_PORT` (default 127.0.0.1:6000), `F19_DOSBOX_BIN` (the
+  DOSBox-X fork with the automation socket) and `F19_DOSBOX_CONF` (its F-19 config). The port serves one
   client at a time.
 
 ## Running
@@ -48,7 +49,8 @@ python analysis/planner <plan_dir>              # plan.json -> route.json + repo
 python analysis/planner/checks.py               # planner model self-checks
 python scripts/nav.py --help                    # live nav / autopilot (sends keys to the running game)
 python scripts/nav_tui.py --replay <F19_DATA>/logs/memlog/<id> [--route route.json]   # HUD on a recorded flight
-uv run --group missions python scripts/mission_finder.py --check-only ...   # START generator reroll (unicorn)
+uv run --group missions python scripts/mission_finder.py --check-only ...   # find a seed for a mission shape (unicorn)
+uv run --group missions python scripts/mission_finder.py --verify-snapshot F # check the generator on a START image
 ```
 
 ## Where game knowledge lives
