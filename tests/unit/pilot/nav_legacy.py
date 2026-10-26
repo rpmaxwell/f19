@@ -12,7 +12,7 @@ with nav as it is (until the cutover, WP-7d).
 import textwrap
 from pathlib import Path
 
-NAV = Path(__file__).resolve().parents[3] / "scripts" / "nav.py"
+NAV = Path(__file__).resolve().parents[3] / "research" / "scripts" / "nav_legacy.py"
 
 
 def _lines(): return NAV.read_text().splitlines()

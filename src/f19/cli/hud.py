@@ -26,24 +26,8 @@ from f19.hud import Hud, HudContext, HudFrame, HudSink
 from f19.hud import layout as L
 from f19.hud.terminal import NullTerminal, Terminal
 from f19.memory import ReplayReader
-from f19.rules import radar as rg
+from f19.rules.radar import radar_systems
 from f19.telemetry import MemlogSource, ReplaySource
-
-# radar code -> (system, "P" / "D", range km): the briefing-map circles (CE / NC), as scripts/read_mission.RADAR; the
-# other codes from the game's tables (name and pulse/doppler from EGAME, the SAM's missile range).
-BRIEFING_RADARS = {1: ("SA-2", "P", 37), 2: ("SA-5", "P", 43), 3: ("SA-8B", "P", 39), 4: ("SA-10", "D", 140),
-                   5: ("SA-11", "P", 62), 6: ("SA-12", "D", 108), 7: ("SA-13", "P", 23),
-                   8: ("SA-N-4", "D", 50), 9: ("SA-N-5", "P", 28), 11: ("SA-N-7", "P", 62), 21: ("OTH", "D", 156)}
-
-
-def radar_systems():
-    out = dict(BRIEFING_RADARS)
-    for t in range(1, 16):
-        if t not in out:
-            _, _, dop = rg.radar_spec(t)
-            out[t] = (rg.weapon_name(t), "D" if dop else "P", rg.sam_range_km(t))
-    return out
-
 
 def theater_of_windows(windows):
     """Theater code from a memlog's window names (world_CE, world_LIBYA, ...), None if none."""

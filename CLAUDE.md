@@ -25,8 +25,10 @@ The target is one layered package, `src/f19/` (plan: [docs/design/refactor_plan.
 `pilot` may use `core, rules, memory, emulator, planner, telemetry`; `hud` may use `core, rules, telemetry` only.
 Nothing imports `research/`.
 
-Today only `src/f19/core/settings.py` exists. **Product code still lives in `scripts/` and `analysis/`** until each
-work package moves it (old entry points stay working through thin shims). Check the plan's WP status before moving
+The package now holds most product code; `scripts/` and `analysis/` keep shims, tools and the reference copies the
+equivalence tests import (`scripts/phases.py`, `missile_watch.py`, `nav_tui.py`; the old nav is `research/scripts/nav_legacy.py`).
+Entry points: `python -m f19.cli.fly` (= `scripts/nav.py`), `python -m f19.cli.hud --replay`, `python analysis/planner`,
+`scripts/read_mission.py`, `scripts/mission_finder.py`. First live flight: `docs/design/first_flight_checklist.md`. Check the plan's WP status before moving
 or restructuring anything, and keep behavior identical during moves; behavior fixes are separate commits.
 
 `research/` holds RE tools, trials, probes and notebooks. It is outside the package and the tests and **may break**.
@@ -47,7 +49,8 @@ uv run pytest                                   # tests (tests/)
 uv run pytest --run-slow                        # + golden full-planner runs (slow, 3-8 min each; added by WP-1)
 python analysis/planner <plan_dir>              # plan.json -> route.json + report.txt + route.png
 python analysis/planner/checks.py               # planner model self-checks
-python scripts/nav.py --help                    # live nav / autopilot (sends keys to the running game)
+python -m f19.cli.fly --help                    # live autopilot (sends keys to the running game); scripts/nav.py is a shim for it
+python -m f19.cli.fly --replay <memlog dir> --dry-run --quiet   # offline: whole stack on a recorded flight, nothing sent
 python scripts/nav_tui.py --replay <F19_DATA>/logs/memlog/<id> [--route route.json]   # HUD on a recorded flight
 uv run --group missions python scripts/mission_finder.py --check-only ...   # find a seed for a mission shape (unicorn)
 uv run --group missions python scripts/mission_finder.py --verify-snapshot F # check the generator on a START image
