@@ -1,6 +1,6 @@
 # F-19 refactor plan
 
-Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25); WP-6, WP-7b, WP-8, WP-7a (2026-10-26). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
+Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25); WP-6, WP-7b, WP-8, WP-7a, WP-7c (2026-10-26). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
 read-only inventory of the current code (three parallel passes: pilot/runtime, planner/rules, research-vs-product).
 
 ## 1. Goals and non-goals
@@ -341,6 +341,22 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   - `terrain_3d` crashed (UnboundLocalError) from WP-0 until WP-3 fixed it (7761a93). The cause was WP-0's path rewrite
     naming the settings `S` while a local `S` shadowed it. No other file has the collision.
   - `radar.md` gives EMV 56 at 10000 ft Veteran; the code gives 55 (it floors `alt // 3` first). One of them is wrong.
+- Found by WP-7c (offline; the FlightDirector in `pilot/director.py`, plan versions in `pilot/plan_state.py`):
+  - The chain is implemented as designed: the estimate only rules candidates out, and every candidate that passes is
+    confirmed with the real router and its integrated fuel. Real-planner timings on the golden CE plan: rejoin replan
+    0.5-2.3 s, landing-only 0.6-1.7 s, a whole bail-out chain 1-2.4 s.
+  - Replans run in one daemon worker thread. `on_tick` returns in about 8 ms and the plan is adopted by a later tick.
+    The worker shares the GIL, so the loop saw gaps up to about 230 ms (one extra 0.15 s tick).
+  - **Softened rule:** if the whole chain is lost to BudgetExceeded, the director retries up to `max_retries` times
+    before it ejects in place. With no event list yet it waits instead of ejecting on a guessed score of 0.
+  - Additive changes outside its files: `Runner._direct` calls `routes.on_tick(...)` when the provider has it, and
+    `cli/fly.py` has a `--director` flag.
+  - **Open questions:** the friendly and neutral bail-out multipliers (only enemy x2/8 is confirmed; the ranking assumes
+    3/8 for both, and matters only when the score is above 0), score loiters as earning options (TODO in
+    `_loiter_options`), alternate airfields for landing, whether bail-out targets a cell's nearest interior point
+    (built) or its centre, and whether a waypoint skipped for fuel stays skipped (built).
+  - **WP-7d must add the EJECT key to Controls** (`Action.EJECT` raises ValueError and would crash the runner's release
+    path). The runner passes `event_list` (6-tuples, refreshed every 1 s) to the director.
 - Found by WP-7a (offline-verified against nav's own code; nothing run live):
   - Controls vs the FakeControls reference: identical key streams on 28,677 applies. Loops vs nav's inline code:
     every tick equal over ~33k ticks. Arbiter vs nav's merge: equal on all three replays and the synthetic overlaps.
