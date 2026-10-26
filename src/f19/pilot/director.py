@@ -326,6 +326,7 @@ class FlightDirector:
     def replan(self, state, reason="manual", events=None):
         """Plan now, on the calling thread, and adopt the result (the StaticRoute hook / tests). -> the new Route or
         None (nothing replaced: inconclusive, or an eject: see .terminal)."""
+        self._progress(state, None, events)
         out = self._decide(self._snapshot(state, events, reason, self._now(state, None)))
         self._apply(out, state, self._now(state, None))
         return out.route
@@ -470,6 +471,7 @@ class FlightDirector:
             route = self.store.replace(out.route, out.reason, t=now, candidate=cand.name, kind=cand.kind,
                                        fuel_end_lb=out.result.fuel_end_lb, plan_s=out.elapsed_s, skipped=out.skipped,
                                        attempts=att)
+            out.route = route
             self.meta = ActivePlan(cand.kind, cand.name, cand.side, cand.follows_reference, out.live_ref, out.constraints, end_xy)
             lines.append(f"plan v{route.version}: {cand.name} ({out.reason}); {len(route.points)} points, fuel at the end "
                          f"{out.result.fuel_end_lb:.0f} lb, {out.elapsed_s:.1f} s" + (f"; {out.note}" if out.note else "")
@@ -541,7 +543,7 @@ class FlightDirector:
         for i, seq in enumerate(seqs):
             if not seq or seq in seen: continue
             seen.add(seq)
-            out.append(self._mission_candidate("full" if i == 0 else ">".join(k.value for k in seq), seq, pose))
+            out.append(self._mission_candidate(seq, pose, "full" if i == 0 else None))
         return out
 
     def _ref_roles_ahead(self, xy):
