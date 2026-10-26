@@ -1,20 +1,9 @@
-"""F-19 mission planner: one deterministic path from a plan spec to a flyable route.
+"""Shim package: the F-19 mission planner moved to src/f19/planner (WP-6). What stays here:
 
-  python analysis/planner <plan_dir>          (reads <plan_dir>/plan.json)
+  python analysis/planner <plan_dir>          (reads <plan_dir>/plan.json; = f19.planner.cli.main)
+  python analysis/planner/new_plan.py ...     (read the briefing, write plan.json, plan)
+  python analysis/planner/checks.py           (unit checks of the model against the decoded game rules)
 
-Everything is in waypoint-table units (game units, 64 per km; player position >> 5).
-Modules, lowest first:
-  world    theater, mission, terrain, territory, airbases (what the map is)
-  radar    the radar model: the game's detection rules (analysis/radar_game.py), no terrain LOS
-  profiles hard limits + objective weights, with named presets
-  fuelplan throttle / flaps per leg and fuel / time along the route (analysis/fuel_model.py)
-  route    search -> fewest legs -> 20 km fillets -> validation
-  probes   test segments (radial runs, arcs, orbits) spliced in by meaning, not index
-  loiter   racetracks in enemy cells no radar can see (score farming; not yet flown)
-  alertsim per-site alert, pulse by pulse, for the report (launch / radar ID predictions)
-  plan     the CLI: plan.json in, route.json + report.txt + route.png out
-  checks   unit checks of the model against FINDINGS.md (python analysis/planner/checks.py)
-
-A plan that breaks a limit is an error in the planner's output, reported by the
-validator; fix the planner or the spec, never the route file.
+and one re-exporting module per old name (world, radar, profiles, fuelplan, route -> f19.planner.router, probes, loiter,
+alertsim, plan -> planner / report / cli, score -> f19.rules.scoring) for the old importers. See f19/planner/__init__.py.
 """

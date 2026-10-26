@@ -10,12 +10,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE), str(HERE.parent)]
+sys.path[:0] = [str(HERE.parent), str(HERE.parents[1] / "src")]   # radar_game (its _check_np), f19 until the package move
 import numpy as np  # noqa: E402
 import radar_game as rg  # noqa: E402
-import fuel_model  # noqa: E402
-import fuelplan  # noqa: E402
-import profiles  # noqa: E402
+from f19.rules import fuel as fuel_model  # noqa: E402
+from f19.planner import fuelplan, profiles  # noqa: E402
 
 FAIL = []
 
