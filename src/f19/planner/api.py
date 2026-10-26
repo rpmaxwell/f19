@@ -24,7 +24,7 @@ from f19.core.types import GameState
 from . import report as _report
 from .estimate import FuelConstraint, nearest_leg
 from .planner import FUEL_FALLBACK, Planner, fixed, game_takeoff_heading, mission_dict
-from .router import PlanError, from_hdg, hdg, unit
+from .router import BudgetExceeded, PlanError, from_hdg, hdg, unit
 from .world import K
 
 EXTRA_FUEL_WEAPON = 17          # loadout weapon index of an Extra Fuel tank (scripts/nav_tui.py)
@@ -211,9 +211,8 @@ def rejoin_index(points, xy, join_km=25.0):
     return k
 
 
-def _rejoin_piece(goal, pose):
+def _rejoin_piece(goal, pose, k):
     pts = list(goal.points)
-    k = rejoin_index(pts, pose.xy, goal.join_km) if goal.index is None else int(goal.index)
     if not 0 < k <= len(pts) - 2: raise PlanError(f"rejoin: point {k} leaves no reference leg to join")
     tail = []
     for p in pts[k:]:
@@ -249,43 +248,101 @@ def _end_xy(el):
     return el["pts"][-1][0] if el["t"] == "fixed" else el["xy"]
 
 
-def route(state, goal, constraints=(), budget_s=10.0, *, planner, margin_km=40.0, lead_km=2.0, land=False):
+REJOIN_FACTORS = (1, 2, 3, 4, 6)    # rejoin points tried at join_km x these along the reference
+LOOP_DEG = 270.0                # a join that turns this much in total is a loop: a farther rejoin point is tried
+ATTACK_KINDS = ("runin", "photo", "launch", "overfly")
+
+
+def rejoin_candidates(points, xy, join_km=25.0, tries=5):
+    """Reference point indices to rejoin at: join_km x REJOIN_FACTORS along the reference from xy's projection, never
+    past its next attack point (a rejoin beyond it would skip the target: the candidates stop at that run-in)."""
+    i, _, _ = nearest_leg(points, xy)
+    stop = next((k for k in range(i, len(points) - 1) if points[k].get("kind") in ATTACK_KINDS), len(points) - 2)
+    out = []
+    for f in REJOIN_FACTORS[:tries]:
+        k = min(rejoin_index(points, xy, join_km * f), stop)
+        if k not in out: out.append(k)
+        if k == stop: break
+    return out
+
+
+def _join_turn(pts, tail):
+    """Total |turn| (deg) of the flown points before the rejoined reference tail."""
+    first = np.asarray(tail["pts"][0][0], float)
+    n = next((i for i, p in enumerate(pts) if np.linalg.norm(np.asarray(p[0], float) - first) < 1.0), len(pts))
+    xy = [np.asarray(p[0], float) for p in pts[:n + 2]]
+    tot = 0.0
+    for a, b, c in zip(xy, xy[1:], xy[2:]):
+        if np.linalg.norm(b - a) > 1e-6 and np.linalg.norm(c - b) > 1e-6:
+            tot += abs((hdg(c - b) - hdg(b - a) + 180) % 360 - 180)
+    return tot
+
+
+def route(state, goal, constraints=(), budget_s=10.0, *, planner, margins_km=(40.0, 120.0), lead_km=2.0, land=False,
+          rejoin_tries=5):
     """Route from the current pose to `goal` (a Goal or a sequence of Goals, flown in order).
 
     state: Pose, core GameState or a Pose dict. constraints: e.g. (FuelConstraint(),), each .check(result, planner) ->
-    [violation]. budget_s: time budget for the searches (BudgetExceeded, a PlanError, when spent). planner: context().
-    margin_km: search box around each leg's ends (the mission planner uses 120). lead_km: the start piece flies the
-    current heading this far before the first turn. land: append Goal.landing() unless the chain already ends on a
-    runway (a landing goal, or a rejoin whose reference ends on one).
+    [violation]. budget_s: time budget for everything (BudgetExceeded, a PlanError, when spent). planner: context().
+    margins_km: search boxes around each leg's ends, tried in order while the search finds no path (the mission planner
+    uses 120 km; a small box fails fast when the goal needs a loop to arrive on its heading). lead_km: the start piece
+    flies the current heading this far before the first turn. land: append Goal.landing() unless the chain already
+    ends on a runway (a landing goal, or a rejoin whose reference ends on one). rejoin_tries: a rejoin without an index
+    tries up to this many reference points (rejoin_candidates), the first whose join does not loop.
 
-    The start piece is the current pose (no takeoff): its first leg is checked for walls; the last leg is exempt only
-    when the route ends on a landing runway. Fuel and time integrate from the pose's fuel, clock and tanks."""
+    Bounded: no option product (one target order, one approach side, one attack bearing, no loiter, no probe). The
+    start piece is the current pose (no takeoff): its first leg is checked for walls; the last leg is exempt only when
+    the route ends on a landing runway. Fuel and time integrate from the pose's fuel, clock and tanks."""
     t0 = time.monotonic(); deadline = t0 + budget_s
     pl = planner; pose = as_pose(state)
     goals = (goal,) if isinstance(goal, Goal) else tuple(goal)
     if not goals: raise ValueError("route(): no goal")
     if land and goals[-1].kind not in ("landing", "rejoin"): goals += (Goal.landing(),)
+    if any(g.kind == "rejoin" for g in goals[:-1]): raise ValueError("route(): a rejoin can only be the last goal")
     u = from_hdg(pose.heading)
     p0 = np.array(pose.xy, float); p1 = p0 + u * lead_km * K
     if not all(64 <= c <= pl.W.size - 64 for c in p1): raise PlanError("the pose's lead point is off the map")
-    seq = [fixed([(p0, "Present position", {"kind": "pose"}), (p1, "", {"kind": "pose"})])]
-    roles = set()
+    start = fixed([(p0, "Present position", {"kind": "pose"}), (p1, "", {"kind": "pose"})])
+    seq, roles = [start], set()
     for g in goals:
         prev = _end_xy(seq[-1])
         if g.kind == "point": el = dict(t="target", xy=(g.x, g.y), role="", label=g.label or "Goal", attrs={"kind": "overfly"})
         elif g.kind == "target":
             el = _target_element(pl, g, prev)
-            if el.get("attack") != "maverick": roles.add(g.role)
+            if el.get("attack") != "maverick": roles.add(g.role.rstrip("?"))
         elif g.kind == "landing": el = _landing_piece(pl, g, prev)
-        elif g.kind == "rejoin":
-            el = _rejoin_piece(g, pose)
-            roles |= {a["role"] for _, l, a in el["pts"] if a.get("kind") == "overfly" and a.get("role")}
+        elif g.kind == "rejoin": el = None                   # below: one per rejoin point tried
         else: raise ValueError(f"unknown goal kind {g.kind!r}")
         seq.append(el)
-    last = seq[-1]
-    lands = last["t"] == "fixed" and (last["pts"][-1][2] or {}).get("kind") == "landing"
-    r = pl.plan(seq, start_fuel=pose.fuel_lb, start_t=pose.t, tanks_left=pose.tanks, ends=(False, lands),
-                margin_km=margin_km, deadline=deadline, roles=roles)
+    last = goals[-1]
+    if last.kind == "rejoin":
+        ks = [int(last.index)] if last.index is not None else rejoin_candidates(last.points, pose.xy, last.join_km, rejoin_tries)
+        tails = [_rejoin_piece(last, pose, k) for k in ks]
+    else:
+        tails = [seq[-1]]
+    r = err = None; looped = []
+    for tail in tails:
+        s_ = seq[:-1] + [tail]
+        rl = roles | {a["role"] for _, l, a in tail["pts"] if a.get("kind") == "overfly" and a.get("role")} \
+            if "rejoin" in tail else roles
+        lands = tail["t"] == "fixed" and (tail["pts"][-1][2] or {}).get("kind") == "landing"
+        for m in margins_km:
+            try:
+                r = pl.plan(s_, start_fuel=pose.fuel_lb, start_t=pose.t, tanks_left=pose.tanks, ends=(False, lands),
+                            margin_km=m, deadline=deadline, roles=rl)
+                break
+            except BudgetExceeded:
+                if not looped: raise
+                break                                # out of time: the best looped join found so far
+            except PlanError as e:
+                err = e
+        if r is None and looped and time.monotonic() > deadline: break
+        if r is not None and "rejoin" in tail and len(tails) > 1 and _join_turn(r["pts"], tail) > LOOP_DEG:
+            looped.append(r); r = None                # joined with a loop: try a farther rejoin point
+            continue
+        if r is not None: break
+    if r is None and looped: r = max(looped, key=lambda x: x["fuel"]["fuel_land"])
+    if r is None: raise err
     # plan() checks the landing reserve on every plan; here the constraints decide (a route may end in the air)
     errors = [e for e in r["errors"] if not e.startswith("fuel at landing")]
     best = {**r, "tag": "in-flight"}
