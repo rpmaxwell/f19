@@ -1,6 +1,6 @@
 # F-19 refactor plan
 
-Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
+Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25); WP-6, WP-7b, WP-8 (2026-10-26). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
 read-only inventory of the current code (three parallel passes: pilot/runtime, planner/rules, research-vs-product).
 
 ## 1. Goals and non-goals
@@ -341,6 +341,34 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   - `terrain_3d` crashed (UnboundLocalError) from WP-0 until WP-3 fixed it (7761a93). The cause was WP-0's path rewrite
     naming the settings `S` while a local `S` shadowed it. No other file has the collision.
   - `radar.md` gives EMV 56 at 10000 ft Veteran; the code gives 55 (it floors `alt // 3` first). One of them is wrong.
+- Found by WP-6:
+  - `route(state, goal)` timings over 64 synthetic airborne CE states:
+    - rejoining the reference route: median 1.9 s, p90 4.8 s, max 12 s
+    - straight to landing: median 1.2 s, max 5.0 s
+    - 8 of the 64 raised PlanError, all with the start or the goal against a ridge
+  - The planner's `context()` takes 1.5-3 s and is built once per flight.
+  - **The cheap fuel estimate is a lower bound.** On the route it is within 0.6 lb. Off route it is optimistic: median
+    +165 lb for a rejoin, +1.0k lb straight to landing, worst +4.6k. So it can only rule candidates out; a candidate
+    that passes still needs the real router (WP-7c must do that).
+  - A rejoin within about 2 turn radii (40 km) often joins through a loop, so `route()` tries farther rejoin points. The
+    real fix is in expand/repair, and that would change mission plans: post-parity.
+  - There's no radar-system→kind table in rules yet (it stays local to planner/world). The planner keeps `K = 64.0`.
+- Found by WP-7b (the contract for WP-7a): `tests/unit/pilot/pilot_equiv.py` `FakeControls` is the reference for
+  Controls and the loops:
+  - Order within a tick: trigger release, then pitch, then actions, then trigger press.
+  - Actions are 0.2 s taps. Throttle and "/" are sent as scancodes.
+  - A `Toggle` taps only when the flag disagrees and that key's last tap was at least `settle_s` ago. The debounce
+    table `ctx.toggled` is shared by all behaviors.
+  - Pitch band: 0.6 s nose up below `pitch_min`, 0.5 s nose down above `pitch_max`, then a 1.0/ts s gap. `pitch_deg`
+    is one tap of clamp(|err|/6/ts, 0.08, 0.5) s.
+  - The gun trigger is held while `gun_fire` is set, and re-pressed on `gun_repress`.
+  - Speed: max/idle clear the target, then `speed_kt` sets it. A reaction's speed is temporary, and the arbiter restores
+    the target when the reaction stops.
+  - Known live differences:
+    - timers now use the tick's `now` (the old code drifted by the length of blocking taps)
+    - FighterWatch uses the real `opp`
+    - FlyLeg keeps nav's rule of dropping zero-length legs
+    - `--fixed` isn't ported
 - Found by WP-8: the HUD adapter (`cli/hud.py`) supplies data that Frame/GameState don't carry yet. That's nav's
   per-cycle view (phase, banner, leg, want, xtrack, holds, ...), the game's event list, read errors, and a context of
   territory, terrain, places, mission and route. The radar-system table is a copy of `read_mission.RADAR` and belongs in
