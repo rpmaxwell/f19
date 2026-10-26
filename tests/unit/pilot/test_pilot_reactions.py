@@ -9,7 +9,7 @@ import pytest
 
 from pilot_equiv import (FakeControls, KeyLog, OldDB, apply_keys, flat_state, gamestate, product, run_phase, run_reaction,
                          world)
-import harness as H
+import harness as H  # noqa: E402  (pilot_equiv put tests/replay on sys.path)
 from f19.core.clock import ManualClock
 from f19.core.types import FlightContext, GameState
 from f19.pilot.reactions import CmKeys, FighterWatch, FuelTransfer, MissileWatch, TerrainEscape
