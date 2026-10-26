@@ -31,7 +31,7 @@ def constants():
     src = [block("NOSE_UP, NOSE_DOWN, KP,", "roll = dict(key=None"),
            block("def roll_rate(now):", "return dh /"),
            block("def wrap(d):", "def wrap(d):"),
-           block("CLIMB_DIST, CLIMB_ALT =", "CLIMB_DIST, CLIMB_ALT ="),
+           block("CLIMB_DIST, CLIMB_ALT =", "REJOIN = "),
            block("LOOKAHEAD, ARRIVE, OVERFLY =", "LOITER_LOOKAHEAD")]
     return "\n".join(src)
 
