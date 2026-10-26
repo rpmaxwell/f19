@@ -18,9 +18,9 @@ The bay-press count of the photo run (banner, log) predicts Controls' debounce f
 """
 import math
 
-from f19.core.types import BAY, FLAPS, Action, Command
+from f19.core.types import BAY, FLAPS, Action
 
-from f19.pilot.phases._common import CAMERA, MAVERICK, K, bearing, game_dist, tap_due, want_toggle, wrap
+from f19.pilot.phases._common import CAMERA, MAVERICK, K, bearing, command_of, game_dist, tap_due, want_toggle, wrap
 
 AIR_GROUND = 2                                   # trackcam mode byte (f19.memory.addresses.AIR_GROUND)
 
@@ -71,7 +71,7 @@ class Attack:
         n_log = len(self.log); acts = []; self.key = ""
         out = self._step(state, ctx, acts)
         if out.get("done"): self.done = True
-        return Command(**out, actions=tuple(acts), events=tuple(self.log[n_log:]))
+        return command_of(out, self.log[n_log:], acts)
 
     def _step(self, state, ctx, acts):
         now, sy, p, ts = ctx.now(), state.systems, state.xy, state.ts

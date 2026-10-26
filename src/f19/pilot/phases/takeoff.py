@@ -11,9 +11,9 @@ What used to be keys:
   thr.target = cruise_kt              Command.speed_kt (persists in the speed hold after the phase)
   nav's tko.finished                  Command.done and the `done` attribute
 """
-from f19.core.types import GEAR_UP, FLAPS, Action, Command
+from f19.core.types import GEAR_UP, FLAPS, Action
 
-from f19.pilot.phases._common import SpeedIntent, want_toggle
+from f19.pilot.phases._common import SpeedIntent, command_of, want_toggle
 
 
 class Takeoff:
@@ -37,7 +37,7 @@ class Takeoff:
         out = dict(alt_hold=False, roll_hold=alt > 50, banner=f"  AUTO TAKEOFF: {self.state}")
         if self.state == "setup":
             if want_toggle(acts, state, Action.BRAKES_TOGGLE, False) or want_toggle(acts, state, Action.FLAPS_TOGGLE, True):
-                return Command(**out, actions=tuple(acts))
+                return command_of(out, actions=acts)
             thr.max(acts); self.state, self.t0 = "roll", now
         elif self.state == "roll":
             if f.throttle < 100 and now - self.t0 > 3:              # max power didn't take: press again
@@ -56,4 +56,4 @@ class Takeoff:
                 thr.set(self.cruise_kt); out["alt_hold"] = True; out["done"] = True; self.done = True
         out["banner"] = f"  AUTO TAKEOFF: {self.state}   pitch {pitch:+.1f}   gear {'up' if f.flags & GEAR_UP else 'DOWN'}" \
                         f"   flaps {'DOWN' if f.flags & FLAPS else 'up'}"
-        return Command(**out, speed_kt=thr.speed_kt, actions=tuple(acts))
+        return command_of(out, actions=acts, speed_kt=thr.speed_kt)

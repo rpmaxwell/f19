@@ -42,6 +42,6 @@ class SpeedIntent:
     def idle(self, acts): acts.append(Action.THROTTLE_IDLE); self.target = self.speed_kt = None
 
 
-def command_of(ov, events=()):
-    """An old (override dict, event texts) pair as a Command (reactions: same keys, Command.from_overrides)."""
-    return dataclasses.replace(Command.from_overrides(ov), events=tuple(events))
+def command_of(ov, events=(), actions=(), **fields):
+    """An old override dict (+ event texts, actions, other Command fields) as a Command (Command.from_overrides)."""
+    return dataclasses.replace(Command.from_overrides(ov), events=tuple(events), actions=tuple(actions), **fields)

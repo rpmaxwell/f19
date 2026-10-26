@@ -20,10 +20,10 @@ What used to be keys / reads:
 """
 import math
 
-from f19.core.types import Command
+
 from f19.rules.weapons import ccip, gun_kill_radius
 
-from f19.pilot.phases._common import K, bearing, game_dist, wrap
+from f19.pilot.phases._common import K, bearing, command_of, game_dist, wrap
 
 
 class GunAttack:
@@ -83,7 +83,7 @@ class GunAttack:
         n_log = len(self.log)
         out = self._step(state, ctx)
         if out.get("done"): self.done = True
-        return Command(**out, events=tuple(self.log[n_log:]))
+        return command_of(out, self.log[n_log:])
 
     def _step(self, state, ctx):
         now, ts, p = ctx.now(), state.ts, state.xy

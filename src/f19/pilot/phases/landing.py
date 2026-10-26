@@ -11,9 +11,9 @@ THROTTLE_MAX (speed hold off); thr.target = APPROACH_KT / FINAL_KT -> Command.sp
 """
 import math
 
-from f19.core.types import FLAPS, GEAR_UP, Action, Command
+from f19.core.types import FLAPS, GEAR_UP, Action
 
-from f19.pilot.phases._common import K, SpeedIntent, bearing, want_toggle, wrap
+from f19.pilot.phases._common import K, SpeedIntent, bearing, command_of, want_toggle, wrap
 
 
 class Landing:
@@ -84,4 +84,4 @@ class Landing:
         out["banner"] = (f"  AUTO LANDING: {self.state}   aim {to_aim:5.2f} km   centreline {xt:+.0f} units (box +-5)"
                          f"   roll {state.att.roll:+.0f}   gear {'up' if f.flags & GEAR_UP else 'down'}"
                          f"   flaps {'down' if f.flags & FLAPS else 'up'}   box {f.rwy_box}")
-        return Command(**out, speed_kt=thr.speed_kt, actions=tuple(acts))
+        return command_of(out, actions=acts, speed_kt=thr.speed_kt)
