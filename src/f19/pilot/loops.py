@@ -16,7 +16,6 @@ loops do the same with clock.now() (a WallClock reproduces it; tests advance a f
 Modes: nav's flags that change in flight (args.hdg, args.alt, args.auto, args.strafe); the arbiter and the runner
 share one Modes (a hand-over sets hdg False and alt None).
 """
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
