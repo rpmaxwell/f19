@@ -19,8 +19,13 @@ Tests whose data is missing (no `~/f19-data`, no fixtures, no `EGAME.bin`) are s
 | `test_rules_checks.py` | `radar_game.py check` and `missile_game.py check` (R1 gate + outcomes) on the replay fixtures; on the whole memlog corpus with `--run-slow` | fast / slow |
 | `test_planner_golden.py` | re-plans frozen plan dirs, compares `route.json` field by field, `report.txt` (minus its header line), `terrain.npz`; the known `pg_shiraz` PlanError | slow (+1 fast) |
 | `replay/test_replay_reactions.py` | replay harness: reactions and phases on recorded flights vs the nav log; frozen baseline | fast |
+| `unit/pilot/test_fly_live.py` | `f19 fly` live start-up on a fake emulator: check_route, N/S switch, signals release keys, `--plain`, `--no-keys`, eject path | fast |
+| `unit/rules/test_radar_systems.py` | the single radar-system table vs the three copies it replaced | fast |
 | `test_import_rules.py` | layer rules for `src/f19` (plan section 3), parsed from the source | fast |
 | `test_settings.py` | `f19.core.settings` | fast |
+
+Reference copies: `scripts/nav.py` is now a shim; the old nav that the equivalence tests extract code from is
+`research/scripts/nav_legacy.py` (frozen; do not edit or run).
 
 `product.py` is the only place tests import product code from. When a wave moves a module (say `phases.py` into
 `f19.pilot`), change the import there; the tests and baselines must then pass unchanged.

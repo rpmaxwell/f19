@@ -1,8 +1,11 @@
-"""f19 fly: the autopilot on the pilot layers (WP-7a) - scripts/nav.py's replacement (the cutover is WP-7d).
+"""f19 fly: the autopilot on the pilot layers (WP-7a). scripts/nav.py is a shim for this module (WP-7d).
 
   python -m f19.cli.fly --route ROUTE [--auto] [--memlog] [--alt FT] [--hdg] [--attack-now ROLE] [--land-now]
                         [--done ROLES] [--strafe RECORDS|nearest] [--missile-watch act|observe|off] [--plain]
       LIVE: connects to the running game and SENDS KEYS. Only for a flight the user asked for, while they watch.
+
+  python -m f19.cli.fly ... --no-keys
+      LIVE, READ-ONLY: reads the running game and runs the whole pilot, but Controls talks to a recorder: no key is sent.
 
   python -m f19.cli.fly --replay <memlog dir> --dry-run [--route ROUTE] [--auto ...] [--out DIR]
       OFFLINE: the whole stack (reader -> arbiter -> Controls -> loops -> telemetry) on a recorded flight's memlog
@@ -10,7 +13,7 @@
       and the nav CSV + events (CsvSink, with route_want / behavior / plan_version). Open loop: the recorded memory
       shows what the recorded flight's keys did, not these.
 
-Flags as nav.py (--fixed is not ported). Wiring: MemoryReader -> Runner(Controls, Arbiter(FlyLeg + phases +
+Flags as nav.py (--fixed is not ported) plus --director, --no-keys. Wiring: MemoryReader -> Runner(Controls, Arbiter(FlyLeg + phases +
 reactions), Loops, TelemetryBus[CsvSink, MemlogSink, HUD], WallClock(time.time), StaticRoute(route.json)).
 """
 import argparse

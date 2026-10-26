@@ -411,6 +411,28 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
 - `pg_shiraz_1024_1514` no longer plans: `PRIMARY: Airplane Shiraz: no usable attack bearing (… no path from
   (17616,10988) to (8000,9536))`, on the baseline code as well.
 
+## WP-7d status (2026-10-26, offline part done; live checks and the clock switch remain)
+- **Done (branch wp7d-cutover):**
+  - `scripts/nav.py` is a shim for `f19.cli.fly.main` (same flags; `--fixed` refused). The old nav is
+    `research/scripts/nav_legacy.py`; tests read it (nav_legacy.py extractor, core geometry / units / types tests). Not run live.
+  - `scripts/phases.py`, `missile_watch.py`, `nav_tui.py`, `f19_state.py`, `read_mission.py` are unchanged: the equivalence
+    and replay tests import them as the reference. They can go once the old-vs-new comparisons are retired.
+  - `fly.live()` takes nav's start-up: connect retry, settle, `check_route` (route vs mission in memory, N/S switch,
+    takeoff-point distance, `--land-now` window), ALT file reset, memlog, CSV, HUD or `--plain` (`cli/plain.py`, with the
+    HUD falling back to it on failure), SIGINT/SIGTERM from the first line of `live()`, `main` returns 130. Tested in
+    `tests/unit/pilot/test_fly_live.py` on a replayed flight with a fake emulator and real signals.
+  - New `--no-keys`: live read-only flight (Controls over a recorder, keys written to `logs/nav/<id>.keys.txt`).
+  - Copies moved: radar-system table -> `gamedata/radar_systems.py` + `rules.radar.radar_systems()` (hud, fly, planner/world
+    use it; the golden plans are unchanged), `parse_missile_world` -> `rules/missiles.py`, `terrain_ahead_probe` ->
+    `rules/terrain.py`. Equality tests: `tests/unit/rules/test_radar_systems.py`, `test_pilot_runner.py`.
+  - EJECT path tested offline (director Order -> runner -> Controls -> one Shift+F10 scancode, clean exit). DESIGNATE still
+    has no key and raises ValueError.
+  - Copies still in src/f19: `rules/radar.py` rough_ceiling (copy of analysis/planner/loiter, until WP-6 retires it);
+    `gamedata/mission_gen.py` has its own .WLD read (TODO use gamedata.wld); START cursor variables unknown (TODO WP-4b).
+- **Left:** the game-clock switch (WallClock -> game Clock, its own commit with replay diffs explained); the first live
+  flights in `docs/design/first_flight_checklist.md` (Shift+F10, POKE and key latency are untried live); deciding when to
+  delete the legacy scripts.
+
 ## WP-0 status (2026-10-24, done)
 - f19 is its own repo (`main`); the baseline commit holds the tree as it was.
 - Data is in `~/f19-data` (`logs/`, `dumps/`, `saves/`, `raw/`, `game/EGAME.bin` + `END.bin`, `attic/`). The DOSBox-X
