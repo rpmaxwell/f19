@@ -28,8 +28,13 @@ current route is what the arbiter's reactions already fly around). A finished pl
 `PlanStore.replace`, in the next `on_tick`; the runner picks the new Route up at its next tick. A plan whose inputs went
 stale (a new trigger fired while it ran) is discarded and the work restarted from the new state. The planner is only
 ever touched by the worker (its caches are not thread-safe); tests use `InlineExecutor` for determinism. The worker
-shares the GIL: numpy releases it, the Python parts of the router do not, so a busy planner slows ticks somewhat
-(measured in tests/unit/pilot/test_director_threading.py).
+shares the GIL: numpy releases it, the Python parts of the router do not, so a busy planner delays the caller's loop
+(measured 2026-10-26 on the golden CE plan, test_director_golden.py: a rejoin replan took 2.25 s end to end, on_tick
+returned in 8 ms, and the caller's 10 ms-sleep loop saw gaps of up to ~230 ms while the worker ran: about one extra
+0.15 s tick period). A process pool would remove that but needs the planner context rebuilt per process (1.5-3 s).
+
+Planning times measured on the real planner (golden CE, 4 states): full-mission rejoin 0.5-2.3 s, landing-only 0.6-1.7 s,
+a whole bail-out chain with three cell routes 1-2.4 s; defaults: budget_s 4 per candidate, total_budget_s 15 per chain.
 
 The plan is built from the state at the trigger; by adoption the plane has flown a few seconds on. The new Route starts
 at that old pose; FlyLeg joins the nearest leg (the plane is some hundred metres from it).
