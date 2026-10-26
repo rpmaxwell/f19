@@ -9,12 +9,12 @@ import struct, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dosbox_automation import Dosbox
-from f19_state import _peek_many, POS, ALT, PITCH
+from f19.memory.addresses import POS, ALT, PITCH
 OFF = int(sys.argv[1], 16) if len(sys.argv) > 1 else 0x10420
-ROOT = Path(__file__).resolve().parent.parent; out = open(S.logs / f"probe/fix_{int(time.time())}.csv", "w", buffering=1)
+out = open(S.logs / f"probe/fix_{int(time.time())}.csv", "w", buffering=1)
 out.write("t,alt,pitch,x,y\n")
 def rd(db):
-    p, a, pr = _peek_many(db, [(POS + OFF, 10), (ALT + OFF, 2), (PITCH + OFF, 2)])
+    p, a, pr = db.peek_many([(POS + OFF, 10), (ALT + OFF, 2), (PITCH + OFF, 2)])
     return struct.unpack_from("<I", p, 0)[0] >> 5, struct.unpack_from("<I", p, 6)[0] >> 5, struct.unpack("<H", a)[0], struct.unpack("<h", pr)[0] * 360 / 65536
 with Dosbox() as db:
     last, t_arm, t_fix = rd(db), time.time(), None
