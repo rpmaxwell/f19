@@ -146,8 +146,27 @@ def build(args, reader, emulator, clock, s0, *, sleep=time.sleep, wall=time.time
                   escape=escape)
     bus = TelemetryBus(sinks)
     site_names = {int(r["record"]) + 3: f"{r['place']} {r['system']}" for r in mm.get("radars", []) if "record" in r and r.get("system")}
-    return Runner(reader, controls, arb, loops, bus, clock, StaticRoute(route), ctx=ctx, reads=reads, memlog=memlog,
+    provider = StaticRoute(route)
+    if getattr(args, "director", False):
+        provider = director_for(args, route, rd, mm, dry=bool(args.dry_run))
+        ctx.route = provider.current()
+    return Runner(reader, controls, arb, loops, bus, clock, provider, ctx=ctx, reads=reads, memlog=memlog,
                   sleep=sleep, side=side, terrain=probe, site_names=site_names, say=say, wall=wall)
+
+
+def director_for(args, route, rd, mm, dry):
+    """--director: the FlightDirector (WP-7c) as the route provider. Needs a planner --route with its plan directory's
+    mission_mem.json. Live: the planning context is built now (1.5-3 s) and plans run on a worker thread; dry run: built
+    on first use and planned inline (deterministic)."""
+    from f19.core.types import Mission
+    from f19.pilot.director import FlightDirector, InlineExecutor, ThreadExecutor
+    from f19.planner import api
+    if not (args.route and mm and rd.get("spec")):
+        raise SystemExit("fly --director: needs --route with a plan directory (route.json with its spec, mission_mem.json)")
+    mission = Mission.from_mission_json(mm)
+    factory = lambda: api.context(rd["spec"], mm)
+    return FlightDirector(mission, route, planner=None if dry else factory(), planner_factory=factory if dry else None,
+                          executor=InlineExecutor() if dry else ThreadExecutor())
 
 
 # --------------------------------------------------------------------------------------------------- dry run
@@ -297,6 +316,7 @@ def parser():
     ap.add_argument("--done", default="", help="--auto: roles already attacked, comma-separated")
     ap.add_argument("--strafe", help="gun attack on radar sites now: record numbers, comma-separated, or 'nearest'")
     ap.add_argument("--missile-watch", choices=("act", "observe", "off"), help="enemy-missile evasion (default act at Elite)")
+    ap.add_argument("--director", action="store_true", help="replan with the FlightDirector after deviations (WP-7c; needs --route)")
     ap.add_argument("--plain", action="store_true", help="no HUD")
     ap.add_argument("--fixed", type=float, help="nav's test heading mode: NOT ported (refused)")
     ap.add_argument("--replay", help="OFFLINE: a memlog run directory to fly over (with --dry-run)")

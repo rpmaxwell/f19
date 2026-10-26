@@ -19,7 +19,8 @@ Also here (pilot-local until they get a home in memory / rules, see the WP-7a re
                         analysis/; tests check it against the original on every fixture snapshot
   terrain_ahead_probe   nav's terrain_ahead on the planner's decoded terrain (terrain.npz height_game)
   MemLog                nav's --memlog snapshot reader, interleaved with the control loop
-  StaticRoute           the route provider until WP-7c's FlightDirector: one route.json, a replan hook that does nothing
+  StaticRoute           the plain route provider: one route.json, no hook. pilot.director.FlightDirector is the other
+                        provider: current() / version, plus on_tick(state, decision, ctx, event_list) -> Order | None
 
 Clock: every timer runs on the injected clock (WallClock(time_fn=time.time) = nav's epoch time; the game clock is
 WP-7d). Key holds stay real time inside Controls.
@@ -332,9 +333,11 @@ class Runner:
         events = []
         self.controls.service(now)
         route = self.routes.current()
-        if ctx.route is not route: ctx.route = route
+        if ctx.route is not route:                   # a new plan version (FlightDirector): FlyLeg joins it from its start
+            ctx.route = route; ctx.leg = 1
         hdg_on = m.hdg
         dec = self.arb.step(state, ctx)
+        dec = self._direct(state, dec, ctx)
         for e in dec.events: self._event(now, e, events)
         self.controls.apply(dec.command, state, ctx, now)
         for k in dec.key_ups: self.controls.up(k)
@@ -353,6 +356,21 @@ class Runner:
         if self.arb.attack is not None: self.arb.attack.key = ""
         self.sleep(self.PERIOD_S if self.memlog is None else self.PERIOD_MEMLOG_S)
         return TickResult(now, True, dec, rep, tf, events=events)
+
+    def _direct(self, state, dec, ctx):
+        """The route provider's on_tick hook (FlightDirector, WP-7c): it may hand back an Order (a Command to merge into
+        the tick's, an exit text, log lines). StaticRoute has no hook. A provider error never stops the flight."""
+        hook = getattr(self.routes, "on_tick", None)
+        if hook is None: return dec
+        try: order = hook(state, dec, ctx, self.event_list)
+        except Exception as e:                       # noqa: BLE001
+            dec.events.append(f"director error: {type(e).__name__}: {e}"); return dec
+        if order is None: return dec
+        dec.events.extend(order.events)
+        if order.command is not None:
+            dec.command = dec.command.merged(order.command); dec.behavior = "director"
+        if order.exit: dec.exit = order.exit
+        return dec
 
     # ----------------------------------------------------------------------------------------------- telemetry
     def _view(self, now, state, dec, rep, route):
