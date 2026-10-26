@@ -15,7 +15,6 @@ reactions), Loops, TelemetryBus[CsvSink, MemlogSink, HUD], WallClock(time.time),
 """
 import argparse
 import json
-import math
 import sys
 import time
 from pathlib import Path
