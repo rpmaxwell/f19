@@ -135,6 +135,14 @@ class GameState:
     waypoints: tuple = ()                # the game's 4 waypoints (x, y) units (phys 0x403CA)
     wp_index: int | None = None          # selected game waypoint 0-3
     sensitivity: int | None = None       # keyboard sensitivity 1-3
+    # --- WP-7b: reads the behaviors did inside step() (Attack, GunAttack, MissileWatch); None / () = not read
+    time_mult: float | None = None       # old 0x410AA game time multiplier (nav.time_mult; 1 if unreadable); None -> 1
+    events: tuple | None = None          # flight-event records (type, flags, target, time) (read_events)
+    projectiles: tuple = ()              # player projectile slots 8-11 in order: (spec u16 +0x10, ttl u16 +0x0E) (read_projectiles)
+    target_records: tuple = ()           # (record, x, y, destroyed) target-table records the reader was asked for (read_target)
+    frame_scale: int | None = None       # ds:4EFC frames per 2 s tick (read_gun fs)
+    gun_slots: int | None = None         # bullet slots in use (read_gun nslots); rounds = systems.gun_rounds
+    missile_world: Any = field(default=None, compare=False, repr=False)   # missile_game.parse() dict (MissileWatch's snap)
 
     @property
     def xy(self): return self.pos.x, self.pos.y
@@ -148,15 +156,33 @@ class GameState:
     @property
     def fuel_lb(self): return self.systems.fuel_lb
 
+    @property
+    def ts(self): return 1.0 if self.time_mult is None else self.time_mult
+
+    def target_record(self, record):
+        """(x, y, destroyed) of a target-table record in target_records, or None."""
+        return next(((x, y, d) for r, x, y, d in self.target_records if r == record), None)
+
+    @property
+    def aircraft(self):
+        """The AIRCRAFT threats as f19_state.read_aircraft dicts (slot order kept)."""
+        return [dict(slot=th.id, x=th.x, y=th.y, alt=th.alt_ft, type=th.type, name=th.name, flags=th.flags, alert=th.alert)
+                for th in self.threats if th.kind is ThreatKind.AIRCRAFT]
+
     @classmethod
     def from_dicts(cls, state, flight=None, status=None, alerts=None, aircraft=None, sites=None, waypoints=None,
-                   trackcam=None, sensitivity=None, t=None):
+                   trackcam=None, sensitivity=None, t=None, time_mult=None, events=None, projectiles=None, targets=None,
+                   gun=None, missile_world=None):
         """From the f19_state read_* results: read_state, read_flight, read_status, read_alerts ((sites, planes)),
-        read_aircraft, read_site_records, read_waypoints ((points, index)). t overrides the status clock."""
+        read_aircraft, read_site_records, read_waypoints ((points, index)). t overrides the status clock.
+        WP-7b reads: time_mult (nav.time_mult), events (read_events), projectiles (read_projectiles raw records),
+        targets ({record: read_target(record)}), gun (read_gun (rounds, fs, nslots): rounds override the status
+        word, same address), missile_world (missile_game.parse())."""
         f, st = flight or {}, status or {}
+        rounds = gun[0] if gun else st.get("gun_rounds")
         sys_ = Systems(flags=f.get("flags", 0), throttle=f.get("throttle"), station=f.get("station"),
                        loadout=tuple(tuple(x) for x in f.get("loadout", ())), fuel_lb=f.get("fuel", st.get("fuel")),
-                       gun_rounds=st.get("gun_rounds"), flares=st.get("flares"), chaff=st.get("chaff"),
+                       gun_rounds=rounds, flares=st.get("flares"), chaff=st.get("chaff"),
                        decoys=st.get("decoys"), dmg_bits=st.get("dmg_bits", 0), dmg_count=st.get("dmg_count"),
                        locked=f.get("locked"), hud_lock=f.get("hud_lock"), rwy_box=f.get("box"), trackcam=trackcam)
         threats = [Threat.from_site(d) for d in sites or ()] + [Threat.from_aircraft(d) for d in aircraft or ()]
@@ -172,7 +198,12 @@ class GameState:
                    vis_ids=st.get("vis_ids"), radar_ids=st.get("radar_ids"), alerted=st.get("alerted"),
                    net_alert=st.get("net_alert"), ap_alt=st.get("ap_alt"), spool=st.get("spool"),
                    n_events=st.get("n_events"), hud=st.get("hud", ""), threats=tuple(threats),
-                   waypoints=tuple(tuple(w) for w in wps), wp_index=wpi, sensitivity=sensitivity)
+                   waypoints=tuple(tuple(w) for w in wps), wp_index=wpi, sensitivity=sensitivity,
+                   time_mult=time_mult, events=None if events is None else tuple(tuple(e) for e in events),
+                   projectiles=tuple((int.from_bytes(r[0x10:0x12], "little"), int.from_bytes(r[0xE:0x10], "little"))
+                                     for r in projectiles or ()),
+                   target_records=tuple((k, *v) for k, v in (targets or {}).items()),
+                   frame_scale=gun[1] if gun else None, gun_slots=gun[2] if gun else None, missile_world=missile_world)
 
 
 # --------------------------------------------------------------------------------------------------------- mission
@@ -417,9 +448,35 @@ class Action(Enum):
     THROTTLE_DOWN = "throttle_down"   # -
     THROTTLE_MAX = "throttle_max"     # Shift+=
     THROTTLE_IDLE = "throttle_idle"   # Shift+-
+    # WP-7b additions
+    TRACKCAM_VIEW = "trackcam_view"   # / (scancode 0x35): tracking camera view up (B needs it)
+    CENTER_STICK = "center_stick"     # keypad 5: centre the stick (pitch and bank deflection persist)
+    SENSITIVITY = "sensitivity"       # Ins: keyboard sensitivity one step
+
+
+# Toggle actions -> the Systems.flags bit they flip (Toggle.on = the bit set: GEAR_TOGGLE on = gear UP)
+TOGGLE_BITS = {Action.GEAR_TOGGLE: GEAR_UP, Action.FLAPS_TOGGLE: FLAPS, Action.BAY_TOGGLE: BAY, Action.BRAKES_TOGGLE: BRAKES,
+               Action.ECM: ECM, Action.IR_JAMMER: IRJ}
+
+
+@dc
+class Toggle:
+    """A switch request inside Command.actions (phases.set_toggle): make the flags bit of `action` (TOGGLE_BITS) read
+    `on`. Controls taps the key only if the flags word disagrees AND that key was last tapped >= settle_s ago (the
+    debounce is per key and shared by every behavior and loop of the flight: the flags word lags a press by a cycle or
+    two and a second tap flips the toggle back). No tap when the flag already reads `on`."""
+    action: Action
+    on: bool
+    settle_s: float = 3.0
+
+    @property
+    def bit(self): return TOGGLE_BITS[self.action]
+
+    def satisfied(self, flags): return bool(flags & self.bit) == self.on
 
 
 _OV_NAMES = {"want": "heading"}          # override-dict key -> Command field where they differ
+_NOT_OV = ("actions", "events")          # Command fields that are not override-dict keys
 
 
 @dc
@@ -451,29 +508,38 @@ class Command:
     missile: str | None = None           # MissileWatch state
     banner: str | None = None
     done: bool | None = None
-    actions: tuple = ()                  # Action, in order
+    actions: tuple = ()                  # Action (tap once) or Toggle (set a switch, debounced), in order
+    # --- WP-7b. Pitch: what the pitch loop (WP-7a) turns into nose-up ("down" arrow) / nose-down ("up") keys.
+    pitch_min: float | None = None       # band hold (Takeoff): pitch < pitch_min -> tap nose-up 0.6 s; pitch > pitch_max ->
+    pitch_max: float | None = None       #   tap nose-down 0.5 s; then no band tap for 1.0 / time_mult s (loop's own timer)
+    pitch_deg: float | None = None       # one tap THIS tick toward pitch_deg if |pitch_deg - pitch| > pitch_tol, held
+    pitch_tol: float | None = None       #   clamp(|err| / 6.0 / time_mult, 0.08, 0.5) s (GunAttack; it spaces them itself)
+    pitch_hold: str | None = None        # "up" / "down": keep that pitch key held while set; released the tick it isn't
+    gun_fire: bool | None = None         # Backspace trigger: True held, False released, None no opinion (released on done)
+    gun_repress: bool | None = None      # with gun_fire True: release + press the trigger this tick (no typematic repeat)
+    events: tuple = ()                   # mission-log lines this tick (phase .log lines / reaction event texts)
 
     @classmethod
     def from_overrides(cls, ov):
         """From an override dict (phases / missile_watch step() results). Unknown keys raise KeyError."""
         inv = {v: k for k, v in _OV_NAMES.items()}
-        keys = {inv.get(k, k) for k in cls.__dataclass_fields__ if k != "actions"}
+        keys = {inv.get(k, k) for k in cls.__dataclass_fields__ if k not in _NOT_OV}
         if bad := set(ov) - keys: raise KeyError(f"unknown override keys {sorted(bad)}")
         kw = {_OV_NAMES.get(k, k): v for k, v in ov.items()}
         if "jam_off" in kw: kw["jam_off"] = tuple(kw["jam_off"])
         return cls(**kw)
 
     def to_overrides(self):
-        """Inverse of from_overrides (jam_off as a list; actions are not part of the dict)."""
+        """Inverse of from_overrides (jam_off as a list; actions and events are not part of the dict)."""
         inv = {v: k for k, v in _OV_NAMES.items()}
-        out = {inv.get(k, k): v for k in self.__dataclass_fields__ if k != "actions" and (v := getattr(self, k)) is not None}
+        out = {inv.get(k, k): v for k in self.__dataclass_fields__ if k not in _NOT_OV and (v := getattr(self, k)) is not None}
         if "jam_off" in out: out["jam_off"] = list(out["jam_off"])
         return out
 
     def merged(self, other):
-        """self overridden by other's set fields (nav's {**ov, **other}); actions concatenate."""
-        kw = {k: v for k in self.__dataclass_fields__ if k != "actions" and (v := getattr(other, k)) is not None}
-        return dataclasses.replace(self, **kw, actions=self.actions + other.actions)
+        """self overridden by other's set fields (nav's {**ov, **other}); actions and events concatenate."""
+        kw = {k: v for k in self.__dataclass_fields__ if k not in _NOT_OV and (v := getattr(other, k)) is not None}
+        return dataclasses.replace(self, **kw, actions=self.actions + other.actions, events=self.events + other.events)
 
 
 @dc
@@ -500,6 +566,11 @@ class FlightContext:
     settings: Any = None
     reader: Any = None                   # memory reader for reads not in GameState yet (events, trackcam, projectiles)
     log: list = field(default_factory=list)
+    # WP-7b: what a behavior needs from the tick so far (the arbiter / runner keeps them current)
+    want: float | None = None            # heading the lower-priority behaviors asked for this tick (reactions' route_want)
+    speed_target: float | None = None    # the speed hold's target as the loops left it last tick (None = off)
+    toggled: dict = field(default_factory=dict)   # Controls' Toggle debounce: Action -> ctx time of its last tap
+                                                  # (Controls writes it; behaviors only read it to predict a tap)
 
     def now(self): return self.clock.now()
 
