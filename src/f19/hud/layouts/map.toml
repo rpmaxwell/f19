@@ -1,0 +1,26 @@
+# A big map with a slim state column: the map takes 70 % of the width, nav + fuel + score on the right.
+name = "map"
+panes = ["map", "nav", "fuel", "score", "radars", "log"]
+
+[[layout]]
+name = "big-map"
+min_width = 100
+fallback = "map-only"
+
+[[layout.columns]]
+size = "70%"
+min = 40
+rows = [{ widget = "map", min = 8, keep = true }]
+
+[[layout.columns]]
+rows = [
+  { widget = "nav", size = 9, min = 5 },
+  { widget = "fuel", size = 5, min = 3 },
+  { widget = "score", size = 4, min = 3 },
+  { widget = "radars", min = 3 },
+  { widget = "log", size = 6, min = 2 },
+]
+
+[[layout]]
+name = "map-only"
+widget = "map"
