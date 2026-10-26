@@ -1,0 +1,248 @@
+"""WP-7b equivalence, phases on synthetic closed-loop worlds: OLD scripts/phases.py vs NEW f19.pilot.phases, same
+world each tick (the world answers the OLD keys; with equal keys both sides see the same next tick). Every tick must
+give the same key events (through the FakeControls adapter), the same override dict (Command.to_overrides minus the
+new-only fields), the same speed-hold target and the same log lines. Branch coverage is asserted per scenario."""
+import math
+
+import pytest
+
+from pilot_equiv import apply_keys, move, pos, product, projectile, run_phase, world
+from f19.pilot.phases import Attack, GunAttack, Landing, Takeoff
+
+T0, DT = 1_800_000_000.0, 0.25
+ph = product.phases()
+
+
+def old_step(o, db, w, t): return o.step(db, w["s"], w["f"], pos(w), t, w["ts"])
+
+
+def ticks(w, n, dt=DT, t0=T0):
+    for i in range(n): yield t0 + i * dt, w
+
+
+# ----------------------------------------------------------------------------------------------------------- takeoff
+def takeoff_world(lose_first_brakes=False, stuck_throttle_ticks=0, accel_anyway=0.0):
+    w = world(alt=0, spd=0, hdg=10.0, flags=0x08, throttle=0)
+    lost = {"brakes": lose_first_brakes, "thr": stuck_throttle_ticks}
+    def after(w, keys, t, ov):
+        s, f = w["s"], w["f"]
+        lose = lost["brakes"] and any(k[1] == "0" for k in keys if k[0] == "tap")
+        if lose: lost["brakes"] = False
+        if any(k[0] == "scan" for k in keys): lost["rolled"] = True
+        if lost["thr"] and any(k[0] == "scan" for k in keys): lost["thr"] -= 1; keys = [k for k in keys if k[0] != "scan"]
+        apply_keys(w, keys, lose=lose)
+        if f["throttle"] >= 100 and not f["flags"] & 0x08: s["spd"] = min(320, s["spd"] + 6)
+        elif accel_anyway and lost.get("rolled") and s["spd"] < 110: s["spd"] = min(110, s["spd"] + accel_anyway)
+        if s["spd"] >= 110: s["alt"] = max(0, int(s["alt"] + f["pitch"] * 2.2)); f["pitch"] -= 0.35
+        elif f["pitch"] > 0: f["pitch"] = max(0.0, f["pitch"] - 0.5)
+        if f["throttle"] < 100 and s["spd"] > 200: s["spd"] -= 3
+        move(w, DT)
+    return w, after
+
+
+@pytest.mark.parametrize("cruise_ft,lose,stuck", [(450, False, 0), (300, True, 0), (450, False, 20)])
+def test_takeoff_equivalent(egame, cruise_ft, lose, stuck):
+    w, after = takeoff_world(lose, stuck)
+    old, new = ph.Takeoff(ph.Throttle(), 190.0, cruise_ft), Takeoff(190.0, cruise_ft)
+    rep = run_phase(old, new, ticks(w, 600), old_step, extra=lambda b: (b.state, b.t0), after=after)
+    assert rep.all_equal, rep.first_diff
+    assert {"setup", "roll", "rotate", "climb"} <= set(rep.states) and new.done, rep.states
+    assert not rep.order_only
+    print(f"takeoff cruise {cruise_ft}: {rep.ticks} ticks, {rep.n_keys} key events, all equal")
+
+
+def test_takeoff_max_power_at_rotation_order(egame):
+    """The one tick order the canonical Controls order can't give: a max-power re-press (roll state) in the tick the
+    plane reaches VR is followed by the first pitch tap. Old: [Shift+=, nose-up]; Controls: pitch first. Same keys."""
+    w, after = takeoff_world(stuck_throttle_ticks=99, accel_anyway=9.0)          # VR exactly 13 ticks (3.25 s > 3) after the first max
+    old, new = ph.Takeoff(ph.Throttle(), 190.0, 450), Takeoff(190.0, 450)
+    rep = run_phase(old, new, ticks(w, 120), old_step, extra=lambda b: (b.state, b.t0), after=after, allow_order=True)
+    assert rep.all_equal, rep.first_diff
+    assert len(rep.order_only) == 1 and rep.order_only[0][0] == [("scan", 0x0D, True, 0.2), ("tap", "down", 0.6)], rep.order_only
+
+
+def steer(w, ov, rate=1.5):
+    """Turn toward the override heading (at most `rate` deg a tick); roll follows the turn."""
+    if "want" not in ov: w["f"]["roll"] = 0.0; return
+    d = (ov["want"] - w["s"]["hdg"] + 180) % 360 - 180
+    d = max(-rate, min(rate, d)); w["s"]["hdg"] = (w["s"]["hdg"] + d) % 360; w["f"]["roll"] = max(-20.0, min(20.0, 9 * d))
+
+
+# ----------------------------------------------------------------------------------------------------------- landing
+BASE, FIX = (10000.0, 10000.0), (10000.0, 10000.0 + 20 * 64)
+
+
+def landing_world(xt0=30.0, drift_low=0.0, float_ft=None, south=False):
+    """Approach from the fix toward the base (northbound, or southbound with south=True); drift_low = units per tick
+    pushed sideways below 100 ft (go-around on the centreline); float_ft = never below this (go-around past the aim)."""
+    fix = (FIX[0], 2 * BASE[1] - FIX[1]) if south else FIX
+    w = world(x=fix[0] + xt0, y=fix[1], alt=700, spd=176, hdg=180.0 if south else 0.0, flags=0x01, throttle=60)
+    def after(w, keys, t, ov):
+        s, f = w["s"], w["f"]
+        apply_keys(w, keys)
+        steer(w, ov)
+        cap = ov.get("alt_cap")
+        if ov.get("alt") == 500: s["alt"] += 15                          # go-around climb
+        elif cap is not None and s["alt"] > cap: s["alt"] = max(0, int(s["alt"] - min(s["alt"] - cap, 9)))
+        if float_ft is not None and s["alt"] < float_ft and ov.get("alt") != 500: s["alt"] = float_ft
+        if 0 < s["alt"] < 3: s["alt"] = 0
+        tgt = old_thr[0].target
+        if tgt is not None: s["spd"] += max(-1.5, min(1.5, tgt - s["spd"]))
+        if s["alt"] == 0 and f["throttle"] == 0: s["spd"] = max(0, s["spd"] - (8 if f["flags"] & 0x08 else 2))
+        if s["alt"] < 100 and drift_low: w["s"]["x"] += int(drift_low * 32)
+        f["box"] = int(s["alt"] == 0)
+        move(w, DT)
+    old_thr = [None]
+    return w, after, old_thr
+
+
+@pytest.mark.parametrize("kind", ["land", "land_south", "go_around_xtrack", "go_around_long"])
+def test_landing_equivalent(egame, kind):
+    kw = dict(land={}, land_south=dict(south=True, xt0=-20.0), go_around_xtrack=dict(drift_low=3.0),
+              go_around_long=dict(float_ft=60))[kind]
+    w, after, old_thr = landing_world(**kw)
+    fix = (FIX[0], 2 * BASE[1] - FIX[1]) if kw.get("south") else FIX
+    old, new = ph.Landing(BASE, fix, ph.Throttle()), Landing(BASE, fix)
+    old_thr[0] = old.thr
+    rep = run_phase(old, new, ticks(w, 3000), old_step, extra=lambda b: (b.state, b.rwy, b.aim, getattr(b, "idled", False)), after=after)
+    assert rep.all_equal, rep.first_diff
+    want = {"land": ["approach", "final", "rollout", "stopped"], "land_south": ["approach", "final", "rollout", "stopped"],
+            "go_around_xtrack": ["approach", "final", "go-around"], "go_around_long": ["approach", "final", "go-around"]}[kind]
+    assert rep.states == want and new.done, rep.states
+    print(f"landing {kind}: {rep.ticks} ticks, {rep.n_keys} key events, all equal")
+
+
+# ----------------------------------------------------------------------------------------------------------- attack
+T_REC, TGT = 12, (20000.0, 20000.0)
+
+
+def attack_world(mode, start_km=30.0, opp=2, b_seq=(32, 2, 6, T_REC), trackcam=0, station=0, loadout=None,
+                 enter_works=True, kills_on_shot=2, lose_bay=0, photo_event=True, alt=450, pitch=3.0):
+    """Flying north at the target from start_km south. B steps through b_seq; Enter fires the selected station's
+    weapon (Maverick: count - 1 and a projectile in slot 1 that lives 6 ticks; the kills_on_shot-th one kills);
+    the first lose_bay '8' taps are lost."""
+    w = world(x=TGT[0], y=TGT[1] + start_km * 64, alt=alt, spd=190, hdg=0.0, pitch=pitch, flags=0x01, throttle=60,
+              station=station, loadout=loadout, opp=opp, trackcam=trackcam)
+    w["targets"] = {T_REC: (int(TGT[0]), int(TGT[1]), False)}
+    st = dict(b=0, shots=0, lose=lose_bay, ttl=0)
+    def after(w, keys, t, ov):
+        f = w["f"]
+        for k in keys:
+            if k[0] == "tap" and k[1] == "b": f["locked"] = b_seq[st["b"] % len(b_seq)]; st["b"] += 1
+            if k[0] == "tap" and k[1] == "8" and st["lose"]: st["lose"] -= 1; keys = [x for x in keys if x is not k]
+            if k[0] == "tap" and k[1] == "enter" and enter_works and f["flags"] & 0x04:
+                wpn, n = f["loadout"][f["station"]]
+                if wpn == 5 and n > 0:
+                    f["loadout"][f["station"]] = (5, n - 1); st["shots"] += 1; st["ttl"] = 6
+                    w["events"].append((4, 0, f["station"], 0))
+                if wpn == 16 and photo_event: w["events"].append((10, 0x80, T_REC, 0))
+        apply_keys(w, keys)
+        if st["ttl"]:
+            st["ttl"] -= 1; w["projectiles"][1] = projectile(0x1B, st["ttl"] * 10)
+            if st["ttl"] == 0 and st["shots"] == kills_on_shot:
+                w["events"].append((1, 0x80, T_REC, 0)); w["targets"][T_REC] = (int(TGT[0]), int(TGT[1]), True)
+        steer(w, ov, rate=3.0)
+        move(w, DT)
+    return w, after
+
+
+def run_attack(mode, photo_km=None, **kw):
+    w, after = attack_world(mode, **kw)
+    old = ph.Attack("primary", mode, TGT, T_REC, 14.0 if mode == "maverick" else None, photo_km, ph.Throttle())
+    new = Attack("primary", mode, TGT, T_REC, 14.0 if mode == "maverick" else None, photo_km)
+    rep = run_phase(old, new, ticks(w, 4000), old_step, after=after,
+                    extra=lambda b: (b.state, b.b_presses, b.space_presses, b.f2_presses, b.bay_presses, b.flaps_set,
+                                     b.shots, b.cam_on, tuple(b.locks), b.slot, b.events0, round(b.next_ok, 6)))
+    return rep, old, new
+
+
+@pytest.mark.parametrize("case", ["maverick_reshoot", "maverick_no_fire", "maverick_too_close", "photo_elite",
+                                  "photo_veteran_no_bay", "no_lock_abandon", "no_weapon", "overfly"])
+def test_attack_equivalent(egame, case):
+    kw, mode = {}, "maverick"
+    if case == "maverick_no_fire": kw = dict(enter_works=False)
+    if case == "maverick_too_close": kw = dict(start_km=5.5, b_seq=(T_REC,))
+    if case == "photo_elite": mode, kw = "photo", dict(opp=3, lose_bay=1, alt=250, pitch=3.0, photo_km=2.0)
+    if case == "photo_veteran_no_bay": mode, kw = "photo", dict(lose_bay=10 ** 6, alt=250, photo_km=1.0)
+    if case == "no_lock_abandon": kw = dict(b_seq=(32, 2), start_km=8.0)
+    if case == "no_weapon": kw = dict(loadout=[(17, 1), (0, 4), (0, 4), (0, 4)])
+    if case == "overfly": mode = "overfly"
+    rep, old, new = run_attack(mode, **kw)
+    assert rep.all_equal, rep.first_diff
+    assert new.done, (rep.states, new.log)
+    want = {"maverick_reshoot": ["prep", "track", "fire", "close", "result", "fire", "close", "result", "away"],
+            "maverick_no_fire": None,
+            "maverick_too_close": ["prep", "away"],
+            "photo_elite": ["prep", "track", "photo", "close", "away"],
+            "photo_veteran_no_bay": ["prep", "track", "photo", "close", "away"],
+            "no_lock_abandon": ["prep"], "no_weapon": ["prep"], "overfly": ["prep", "past"]}[case]
+    if want is None:
+        assert {"fire", "close", "result", "away"} <= set(rep.states) and any("did NOT fire" in x for x in new.log), new.log
+    else: assert rep.states == want, (rep.states, new.log)
+    print(f"attack {case}: {rep.ticks} ticks, {rep.n_keys} key events, log {new.log}")
+
+
+# ----------------------------------------------------------------------------------------------------------- gun
+G_REC, G_T = 7, (30000.0, 30000.0)
+
+
+def gun_world(start_km=10.0, rounds=650, kill_pass=2, repeat=True, alt=1500, low_first=False, sink=1.0):
+    """Run-in at 1500 ft, 250 kt toward a radar site. Pitch follows the taps (6 deg/s held, nose-up held in the pull);
+    the dive sinks at the pitch; bullets every tick while the trigger is held (repeat=False: only on a fresh press);
+    the site dies at the end of pass kill_pass; low_first: no climb until the first extension (not set up at the push)."""
+    w = world(x=G_T[0], y=G_T[1] + start_km * 64, alt=1100 if low_first else alt, spd=250, hdg=0.0, pitch=0.0, flags=0x01,
+              throttle=70, gun=(rounds, 4, 20))
+    w["targets"] = {G_REC: (int(G_T[0]), int(G_T[1]), False)}
+    st = dict(held=False, passes=0, prev="")
+    def after(w, keys, t, ov):
+        s, f = w["s"], w["f"]
+        fresh = False
+        for k in keys:
+            if k == ("down", "bs"): st["held"] = True; fresh = True
+            if k == ("up", "bs"): st["held"] = False
+            if k == ("down", "down"): st["pull"] = True
+            if k == ("up", "down"): st["pull"] = False
+        apply_keys(w, keys)
+        if st.get("pull"): f["pitch"] += 6.0 * DT * 2
+        rounds, fs, ns = w["gun"]
+        if st["held"] and (repeat or fresh): w["gun"] = (max(0, rounds - 10), fs, ns)
+        if old_ref[0].state == "check" and st["prev"] != "check": st["passes"] += 1
+        if old_ref[0].state == "check" and st["passes"] >= kill_pass:
+            w["targets"][G_REC] = (int(G_T[0]), int(G_T[1]), True)
+        st["prev"] = old_ref[0].state
+        steer(w, ov, rate=2.0)
+        if old_ref[0].state not in ("dive", "pull"):
+            f["pitch"] += max(-1.0, min(1.0, -f["pitch"]))
+            if old_ref[0].state != "runin": st["climb"] = True
+            tgt = ov.get("alt", 1500)
+            if st.get("climb") or not low_first: s["alt"] += int(max(-20, min(20, tgt - s["alt"])))
+        else:
+            s["alt"] = max(0, int(s["alt"] + sink * 250 * 0.5144 * 3.281 * 2.5 * DT * math.sin(math.radians(f["pitch"]))))
+        move(w, DT)
+    old_ref = [None]
+    return w, after, old_ref
+
+
+@pytest.mark.parametrize("case", ["kill_on_pass2", "three_passes", "no_repeat", "not_set_up", "gun_empty"])
+def test_gun_attack_equivalent(egame, case):
+    kw = dict(kill_on_pass2={}, three_passes=dict(kill_pass=99), no_repeat=dict(repeat=False, kill_pass=1, sink=0.25),
+              not_set_up=dict(low_first=True, kill_pass=1), gun_empty=dict(rounds=5))[case]
+    w, after, old_ref = gun_world(**kw)
+    old, new = ph.GunAttack(G_REC, G_T, ph.Throttle()), GunAttack(G_REC, G_T)
+    old_ref[0] = old
+    rep = run_phase(old, new, ticks(w, 6000), old_step, after=after,
+                    extra=lambda b: (b.state, b.passes, b.k, b.firing, b.pulse, b.bottom, b.fired, round(b.next_ok, 6),
+                                     round(b.cycle, 9)))
+    assert rep.all_equal, rep.first_diff
+    assert new.done, (rep.states, new.log)
+    seen = set(rep.states)
+    need = {"kill_on_pass2": {"runin", "dive", "pull", "check", "extend", "turn"}, "three_passes": {"dive", "pull", "check", "turn"},
+            "no_repeat": {"dive", "pull", "check"}, "not_set_up": {"runin", "extend", "turn", "dive", "check"}, "gun_empty": {"runin"}}[case]
+    assert need <= seen, (rep.states, new.log)
+    kinds = {k if k[0] in ("down", "up") else (k[0], k[1]) for k in rep.keys}
+    if case in ("kill_on_pass2", "three_passes", "no_repeat", "not_set_up"):
+        assert {("down", "bs"), ("up", "bs"), ("down", "down"), ("up", "down")} <= kinds, kinds
+        assert ("tap", "down") in kinds or ("tap", "up") in kinds, kinds        # band taps in the dive
+    if case == "no_repeat":                                                       # pulse: re-press while held
+        assert any(a == ("up", "bs") and b == ("down", "bs") for a, b in zip(rep.keys, rep.keys[1:])), rep.keys
+    print(f"gun {case}: {rep.ticks} ticks, {rep.n_keys} key events, states {rep.states}, log {new.log}")
