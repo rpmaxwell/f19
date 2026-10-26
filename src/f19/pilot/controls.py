@@ -44,14 +44,16 @@ TRIGGER = "bs"
 CENTER = "kp5"
 TAP = 0.2                                      # phases.TAP: a longer press auto-repeats
 MINUS, EQUALS, SLASH = 0x0C, 0x0D, 0x35        # set-1 scancodes (phases.py)
+F10 = 0x44                                     # set-1 scancode; Shift+F10 ejects (the user, 2026-10-26)
 
 KEYS = {Action.GEAR_TOGGLE: "6", Action.FLAPS_TOGGLE: "9", Action.BRAKES_TOGGLE: "0", Action.BAY_TOGGLE: "8",
         Action.NEXT_WEAPON: "space", Action.FIRE: "enter", Action.GUN: TRIGGER, Action.TRACKCAM_MODE: "f2",
         Action.SELECT_TARGET: "b", Action.FLARE: "1", Action.CHAFF: "2", Action.DECOY: "5", Action.IR_JAMMER: "3",
         Action.ECM: "4", Action.CENTER_STICK: CENTER, Action.SENSITIVITY: "ins"}
 SCANS = {Action.TRACKCAM_VIEW: (SLASH, False), Action.THROTTLE_MAX: (EQUALS, True), Action.THROTTLE_IDLE: (MINUS, True),
-         Action.THROTTLE_UP: (EQUALS, False), Action.THROTTLE_DOWN: (MINUS, False)}
-# Actions with no key yet (DESIGNATE, EJECT: WP-7c adds EJECT): apply() raises rather than guessing a key.
+         Action.THROTTLE_UP: (EQUALS, False), Action.THROTTLE_DOWN: (MINUS, False),
+         Action.EJECT: (F10, True)}              # same shifted-scancode path as Shift+= (max power); NOT yet tried live
+# Actions with no key yet (DESIGNATE): apply() raises rather than guessing a key.
 
 
 class SpeedTarget:

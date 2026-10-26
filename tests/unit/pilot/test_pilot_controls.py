@@ -80,7 +80,9 @@ def test_toggle_debounce_shared_and_throttle_clears_speed(egame):
     assert c.toggle(Toggle(Action.FLAPS_TOGGLE, True), st, ctx.now() + 1.0, ctx.toggled) is True and emu.take() == []
     assert c.toggle(Toggle(Action.FLAPS_TOGGLE, True), st, ctx.now() + 3.0, ctx.toggled) is True and emu.take() == [("tap", "9", 0.2)]
     c.apply(Command(speed_kt=165.0), st, ctx); assert c.speed.target == 165.0
-    with pytest.raises(ValueError): c.apply(Command(actions=(Action.EJECT,)), st, ctx)
+    c.apply(Command(actions=(Action.EJECT,)), st, ctx)
+    assert emu.take() == [("scan", 0x44, True, 0.2)]                           # Shift+F10, the shifted-scancode path
+    with pytest.raises(ValueError): c.apply(Command(actions=(Action.DESIGNATE,)), st, ctx)
 
 
 def test_scheduled_hold_and_release_all(egame):
