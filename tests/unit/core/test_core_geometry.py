@@ -13,7 +13,7 @@ N = 3000
 F = lambda: R.uniform(-40000, 40000)                 # float units, beyond the 32768-unit map
 I = lambda: R.randint(-40000, 40000)
 
-nav = extract("scripts/nav.py", "K", "bearing", "dist", "game_dist", "wrap", "seg_dist")
+nav = extract("research/scripts/nav_legacy.py", "K", "bearing", "dist", "game_dist", "wrap", "seg_dist")
 phases = extract("scripts/phases.py", "K", "wrap", "bearing", "game_dist")
 tui = extract("scripts/nav_tui.py", "game_dist", "bearing", "wrap")
 mw = extract("scripts/missile_watch.py", "wrap", "deg", "u65")

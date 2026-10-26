@@ -9,7 +9,7 @@ R = random.Random(7)
 
 
 def test_constants_match_old_copies():
-    for rel in ("scripts/nav.py", "scripts/phases.py", "scripts/nav_tui.py", "scripts/missile_watch.py", "analysis/planner/world.py"):
+    for rel in ("research/scripts/nav_legacy.py", "scripts/phases.py", "scripts/nav_tui.py", "scripts/missile_watch.py", "analysis/planner/world.py"):
         assert extract(rel, "K")["K"] == u.K
     assert u.PLAN_CELL_KM == world["CELL_KM"] and u.PLAN_CELL_UNITS == world["CELL"]
     assert u.GROUND_PER_KT == world["GROUND_PER_KT"] == extract("scripts/nav_tui.py", "GROUND_PER_KT")["GROUND_PER_KT"]

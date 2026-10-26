@@ -327,7 +327,7 @@ def parser():
 
 
 def resolve(args):
-    if args.fixed is not None: raise SystemExit("fly: --fixed is not ported (nav.py still has it)")
+    if args.fixed is not None: raise SystemExit("fly: --fixed is not ported (the old nav is research/scripts/nav_legacy.py; do not run it live)")
     if args.auto:
         if not args.route: raise SystemExit("fly: --auto needs a planner --route")
         args.hdg = True

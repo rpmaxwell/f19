@@ -75,7 +75,7 @@ def test_systems_flags():
 
 
 def test_command_covers_nav_overrides():
-    nav = (REPO / "scripts/nav.py").read_text()
+    nav = (REPO / "research/scripts/nav_legacy.py").read_text()
     keys = set(re.findall(r'\b[mfe]?ov(?:\.get\(|\[)"(\w+)"', nav)) | set(re.findall(r'"(\w+)" in [mfe]?ov\b', nav))
     src = (REPO / "scripts/phases.py").read_text() + (REPO / "scripts/missile_watch.py").read_text()
     keys |= set(re.findall(r'\b(?:out|ov)\["(\w+)"\]', src))
