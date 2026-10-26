@@ -341,6 +341,10 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   - `terrain_3d` crashed (UnboundLocalError) from WP-0 until WP-3 fixed it (7761a93). The cause was WP-0's path rewrite
     naming the settings `S` while a local `S` shadowed it. No other file has the collision.
   - `radar.md` gives EMV 56 at 10000 ft Veteran; the code gives 55 (it floors `alt // 3` first). One of them is wrong.
+- Found by WP-8: the HUD adapter (`cli/hud.py`) supplies data that Frame/GameState don't carry yet. That's nav's
+  per-cycle view (phase, banner, leg, want, xtrack, holds, ...), the game's event list, read errors, and a context of
+  territory, terrain, places, mission and route. The radar-system table is a copy of `read_mission.RADAR` and belongs in
+  gamedata. WP-7a/7d should put these in the Frame. In replays the HUD clock shows the recorded time.
 - Found by WP-5: legacy logs keep wall time only (no game time), event times rounded to whole seconds, a memlog paired
   with its nav log by nearest epoch (~12 s apart), and no route `want` from before overrides. New runs written through
   `FileFlightStore` record the route want, the behavior and the plan version.
