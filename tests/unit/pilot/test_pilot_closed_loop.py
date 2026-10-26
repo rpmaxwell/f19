@@ -75,17 +75,17 @@ def test_closed_loop_smoke():
     toy = Toy(clock)
     a = fly.resolve(fly.parser().parse_args(["--hdg", "--alt", "1000", "--missile-watch", "off"]))
     a.auto, a.dry_run = True, True
-    route = Route((RoutePoint(10000.0, 20000.0, "start"), RoutePoint(16000.0, 20000.0, "east"),
-                   RoutePoint(16000.0, 12000.0, "north"), RoutePoint(9000.0, 9000.0, "west")))
+    route = Route((RoutePoint(10000.0, 20000.0, "start"), RoutePoint(13000.0, 20000.0, "east"),
+                   RoutePoint(13000.0, 15000.0, "north"), RoutePoint(9000.0, 12000.0, "west")))
     emu = ToyEmu(toy, clock)
     r = fly.build(a, ToyReader(toy), emu, clock, toy.state(), sleep=clock.advance, wall=clock.now, say=lambda m: None, route=route)
     r.reads = r.arb.reads = ToyReads(None)
     errs, alts, spds, legs = [], [], [], set()
-    for i in range(6000):
+    for i in range(9000):
         res = r.tick()
         d = res.decision
         legs.add(r.ctx.leg)
-        if i > 1500:
+        if i > 2000:
             errs.append(abs(wrap_deg(d.want - toy.hdg))); alts.append(toy.alt); spds.append(toy.spd)
     r.release(roll_level=False)
     errs.sort()
