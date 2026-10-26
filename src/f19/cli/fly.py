@@ -14,7 +14,9 @@ Flags as nav.py (--fixed is not ported). Wiring: MemoryReader -> Runner(Controls
 reactions), Loops, TelemetryBus[CsvSink, MemlogSink, HUD], WallClock(time.time), StaticRoute(route.json)).
 """
 import argparse
+import contextlib
 import json
+import signal
 import sys
 import time
 from pathlib import Path
@@ -24,6 +26,7 @@ from f19.core.geometry import bearing_deg, dist, wrap_deg
 from f19.core.settings import settings as S
 from f19.core.types import FlightContext, Route, RoutePoint
 from f19.core.units import K
+from f19.cli.plain import FallbackSink, PlainSink
 from f19.gamedata import wld
 from f19.memory import MemoryReader, ReplayReader
 from f19.memory import mission as MM
@@ -103,7 +106,7 @@ def fill_records(db, attacks):
 
 
 def build(args, reader, emulator, clock, s0, *, sleep=time.sleep, wall=time.time, say=print, memlog=None,
-          sinks=(), route=None):
+          sinks=(), route=None, logs=None):
     """The whole stack for a flight starting at GameState s0. -> Runner."""
     modes = Modes(hdg=bool(args.hdg), alt=args.alt, auto=bool(args.auto), strafe=bool(args.strafe))
     rd, mm, probe = flight_files(args.route) if args.route else ({}, {}, None)
@@ -121,7 +124,7 @@ def build(args, reader, emulator, clock, s0, *, sleep=time.sleep, wall=time.time
             pass
     speed = SpeedHold()
     controls = Controls(emulator, speed)
-    loops = Loops(clock, modes, S.logs / "nav" / "ALT" if not args.dry_run else None, speed)
+    loops = Loops(clock, modes, (Path(logs) if logs is not None else S.logs) / "nav" / "ALT" if not args.dry_run else None, speed)
     reads = Reads(reader)
     fly = FlyLeg()
     ctx = FlightContext(clock, route=route, reference=route, reader=reader)
@@ -211,52 +214,96 @@ def dry_run(args):
 
 
 # ------------------------------------------------------------------------------------------------------ live
-def live(args):  # pragma: no cover - sends keys to the running game; never run in tests
-    """The live flight: as nav.py's start-up (connect, settle, sanity checks on the route) then Runner.run()."""
-    from f19.emulator import connect
-    say = lambda m: print(m, flush=True)
-    while True:
-        try: emu = connect(); break
-        except (TimeoutError, OSError, RuntimeError):
-            say("fly: automation port not answering (emulator paused?) - retrying"); time.sleep(2)
-    with emu:
-        reader = MemoryReader(emu)
-        clock = WallClock(time_fn=time.time)
-        controls_probe = Controls(emu)
-        tmp = Runner.__new__(Runner)                      # settle needs only reader / controls / say / sleep / wall
-        tmp.reader, tmp.controls, tmp.say, tmp.sleep, tmp.wall = reader, controls_probe, say, time.sleep, time.time
-        Runner.settle(tmp)
-        s0 = reader.snapshot()
-        check_route(args, reader, s0)
-        memlog = sinks = None
-        sinks = []
-        if args.memlog:
-            wb = {}
-            for th in ("CE", "NC", "LIBYA", "GULF"):
-                f = S.game_dir / f"{th}.WLD"
-                if f.exists(): wb[th] = f.read_bytes()
-            memlog = MemLog(emu, wb, clock=time.time)
-            sinks.append(MemlogSink(S.logs / "memlog" / str(int(time.time())), memlog.layout))
-        rid = str(int(time.time()))
-        sinks.append(CsvSink(S.logs / "nav" / f"{rid}.csv", S.logs / "nav" / f"{rid}.events.txt", columns=EXTENDED_COLUMNS))
-        if not args.plain and sys.stdout.isatty() and args.route:
-            sinks.append(hud_sink(args, reader))
-        (S.logs / "nav" / "ALT").unlink(missing_ok=True)
-        runner = build(args, reader, emu, clock, s0, say=say, memlog=memlog, sinks=sinks)
-        try: runner.run()
-        finally:
-            for s in sinks:
-                try: s.close()
-                except Exception: pass            # noqa: BLE001
+@contextlib.contextmanager
+def stop_signals():
+    """SIGINT / SIGTERM raise KeyboardInterrupt for the whole live flight (start-up included), also for a process started in
+    the background (a non-interactive shell's `&` ignores SIGINT; a kill -9 mid-read left replies queued for the next
+    client): the handlers unwind to the `finally` that releases the keys. Restored on exit. Main thread only."""
+    def _stop(*_): raise KeyboardInterrupt
+    old = {}
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try: old[sig] = signal.signal(sig, _stop)
+        except ValueError: pass                           # not the main thread
+    try: yield
+    finally:
+        for sig, h in old.items(): signal.signal(sig, h)
 
 
-def hud_sink(args, reader):  # pragma: no cover - live display
+def live(args, *, connect_fn=None, reader_factory=MemoryReader, say=None, sleep=time.sleep, wall=time.time, logs=None,
+         tty=None, hud_factory=None, world=None):
+    """The live flight: nav's start-up (connect, settle, sanity checks on the route, ALT file reset, display) then
+    Runner.run(). Everything it touches is injectable so tests can run it on a fake emulator: connect_fn() -> an emulator
+    context manager (default f19.emulator.connect), reader_factory(emu) -> reader, logs: the log root (default F19_DATA/logs).
+    Keys are released on every way out: an exit, an exception, SIGINT / SIGTERM (also during start-up)."""
+    if say is None: say = lambda m: print(m, flush=True)
+    if connect_fn is None:
+        from f19.emulator import connect as connect_fn
+    logs = Path(logs) if logs is not None else S.logs
+    tty = sys.stdout.isatty() if tty is None else tty
+    with stop_signals():
+        while True:
+            try: emu = connect_fn(); break
+            except (TimeoutError, OSError, RuntimeError):
+                say("fly: automation port not answering (emulator paused?) - retrying"); sleep(2)
+        with emu:
+            reader = reader_factory(emu)
+            clock = WallClock(time_fn=wall)
+            keys = emu
+            if args.no_keys:                                  # read-only flight: Controls talks to a recorder, never the game
+                keys = RecordingEmulator(clock)
+                say("fly --no-keys: reading the live game, NO key is sent (the key stream goes to logs/nav/<id>.keys.txt)")
+            probe = Controls(keys)
+            sinks, runner, rid = [], None, str(int(wall()))
+            try:
+                tmp = Runner.__new__(Runner)                  # settle needs only reader / controls / say / sleep / wall
+                tmp.reader, tmp.controls, tmp.say, tmp.sleep, tmp.wall = reader, probe, say, sleep, wall
+                Runner.settle(tmp)
+                s0 = reader.snapshot()
+                check_route(args, reader, s0, world=world, say=say)
+                memlog = None
+                if args.memlog:
+                    wb = {}
+                    for th in ("CE", "NC", "LIBYA", "GULF"):
+                        f = S.game_dir / f"{th}.WLD"
+                        if f.exists(): wb[th] = f.read_bytes()
+                    memlog = MemLog(emu, wb, clock=wall)
+                    sinks.append(MemlogSink(logs / "memlog" / str(int(wall())), memlog.layout))
+                sinks.append(CsvSink(logs / "nav" / f"{rid}.csv", logs / "nav" / f"{rid}.events.txt", columns=EXTENDED_COLUMNS))
+                route = Route.from_route_json(args.route) if args.route else game_route(s0)
+                rd, mm, _ = flight_files(args.route) if args.route else ({}, {}, None)
+                plain = PlainSink(radars=mm.get("radars", []), clear=tty)
+                if args.plain or not tty: sinks.append(plain)
+                else:
+                    try: hud = (hud_factory or hud_sink)(args, route)
+                    except Exception as e:                    # noqa: BLE001
+                        say(f"fly: display failed ({e!r}) - plain text from here"); hud = None
+                    sinks.append(FallbackSink(hud, plain, say) if hud is not None else plain)
+                (logs / "nav" / "ALT").unlink(missing_ok=True)   # a stale altitude-schedule file from an earlier flight
+                runner = build(args, reader, keys, clock, s0, say=say, memlog=memlog, sinks=sinks, route=route, logs=logs,
+                               sleep=sleep, wall=wall)
+                runner.run(signals=False)                     # stop_signals() is installed; run() releases in its finally
+            except BaseException:
+                if runner is None: probe.release_all()        # failed or interrupted before the runner existed
+                raise
+            finally:
+                if args.no_keys:
+                    try:
+                        (logs / "nav").mkdir(parents=True, exist_ok=True)
+                        (logs / "nav" / f"{rid}.keys.txt").write_text("\n".join(" ".join(map(str, e)) for e in keys.events) + "\n")
+                    except (OSError, NameError): pass
+                for sk in sinks:
+                    try: sk.close()
+                    except Exception: pass                    # noqa: BLE001
+
+
+def hud_sink(args, route):  # pragma: no cover - live display
     """The HUD as a telemetry sink (WP-8): the Frame's nav view + the game's event list the runner reads."""
-    from f19.cli.hud import load_context, route_points
+    from f19.cli.hud import load_context
     from f19.hud import Hud, HudFrame, HudSink
     from f19.hud import layout as L
     from f19.hud.terminal import Terminal
-    ctx = load_context(None, args.route, route_points(args.route))
+    pts = [((q.x, q.y), q.label) for q in route.points]
+    ctx = load_context(None, args.route, pts)
     sink = HudSink(Hud(ctx, L.load(None)), Terminal())
 
     class _Adapter:
@@ -264,36 +311,53 @@ def hud_sink(args, reader):  # pragma: no cover - live display
         def write(self, tf):
             if tf.frame is None: return
             sink.write(HudFrame.from_telemetry(tf, event_list=tf.nav.get("event_list")))
+            if sink.failed is not None: raise RuntimeError(f"HUD sink failed: {sink.failed!r}")
         def flush(self, timeout=None): return True
         def close(self, timeout=10.0): return sink.close()
     return _Adapter()
 
 
-def check_route(args, reader, s0):  # pragma: no cover - live start-up checks (nav.py :408-456)
-    """The route must belong to the mission in memory; fly the N/S variant that matches the plane on the runway; refuse
-    a takeoff point far away or a --land-now from the wrong side."""
+def check_route(args, reader, s0, world=None, say=print):
+    """nav's start-up checks (scripts/nav.py :408-456), before any key is sent:
+      1. the route must belong to the mission in memory (its plan directory's mission_mem.json target slots equal one of the
+         mission copies in memory; a stale route crashed a flight 2026-10-14); the error lists plan dirs that match
+      2. N/S: on the ground facing away from the route's takeoff direction -> fly the sibling route_S / route_N file
+         (args.route is switched), or refuse when there is none
+      3. on the ground more than 10 km from the route's takeoff point -> refuse
+      4. --auto --land-now: the plane must be 2..60 km before the runway along the approach (a save state that did not
+         load left the plane 53 km past it, 2026-10-18) -> refuse otherwise
+    Raises SystemExit with nav's messages; may set args.route."""
     if not args.route: return
     rp = Path(args.route)
     mm = rp.parent / "mission_mem.json"
+    key = lambda m: sorted((t["x"], t["y"]) for t in m.get("slots", m["targets"]))
     if mm.exists():
         planned = json.loads(mm.read_text())
-        copies = MM.parse_all(reader.memory(), planned.get("theater", "NC"), world=_World())
-        key = lambda m: sorted((t["x"], t["y"]) for t in m.get("slots", m["targets"]))
+        # memory can hold more than one mission copy, including a stale one with the same place names (2026-10-15):
+        # accept the route if any copy matches it
+        copies = MM.parse_all(reader.memory(), planned.get("theater", "NC"), world=world or _World())
         live_ = next((c for c in copies if key(c) == key(planned)), copies[-1] if copies else {"targets": []})
         if key(live_) != key(planned):
+            match = []
+            for p in sorted(rp.parent.parent.glob("*/mission_mem.json")):
+                try:
+                    if any(key(json.loads(p.read_text())) == key(c) for c in copies): match.append(str(p.parent))
+                except (OSError, ValueError, KeyError): pass
             raise SystemExit(f"fly: {mm.parent} was planned for targets {[(t['place'], t['x'], t['y']) for t in planned['targets']]}\n"
                              f"     but the mission in memory is {[(t['place'], t['x'], t['y']) for t in live_['targets']]}\n"
-                             f"     - wrong route file? Not flying it.")
+                             f"     - wrong route file? Not flying it."
+                             + (f" Plan dirs matching this mission: {', '.join(match)}" if match else ""))
     pts = Route.from_route_json(rp).points
     if s0.alt_ft < 150 and len(pts) > 1 and abs(wrap_deg(s0.heading - bearing_deg(pts[0].xy, pts[1].xy))) > 90:
         other = rp.with_name(rp.name.replace("_N.", "_X.").replace("_S.", "_N.").replace("_X.", "_S."))
         if other == rp or not other.exists():
             raise SystemExit(f"fly: plane faces {s0.heading:.0f} on the runway but {rp.name} takes off on "
-                             f"{bearing_deg(pts[0].xy, pts[1].xy):.0f} and there is no {other.name} - replan.")
-        args.route = str(other); print(f"fly: plane faces {s0.heading:.0f} on the runway - flying {other.name}", flush=True)
+                             f"{bearing_deg(pts[0].xy, pts[1].xy):.0f} and there is no {other.name} - replan with takeoff_heading for this direction.")
+        args.route = str(other); say(f"fly: plane faces {s0.heading:.0f} on the runway - flying {other.name}")
         pts = Route.from_route_json(other).points
     if s0.alt_ft < 150 and dist(s0.xy, pts[0].xy) > 10 * K:
-        raise SystemExit(f"fly: on the ground {dist(s0.xy, pts[0].xy) / K:.0f} km from the route's takeoff point - not flying it.")
+        raise SystemExit(f"fly: on the ground {dist(s0.xy, pts[0].xy) / K:.0f} km from the route's takeoff point ({pts[0].label}) "
+                         f"- wrong route, or takeoff/landing swapped? Not flying it.")
     if args.auto and args.land_now:
         fx = next(q.xy for q in pts if q.label == "Approach fix"); rw = pts[-1].xy
         ux, uy = (rw[0] - fx[0]) / dist(fx, rw), (rw[1] - fx[1]) / dist(fx, rw)
@@ -318,6 +382,8 @@ def parser():
     ap.add_argument("--missile-watch", choices=("act", "observe", "off"), help="enemy-missile evasion (default act at Elite)")
     ap.add_argument("--director", action="store_true", help="replan with the FlightDirector after deviations (WP-7c; needs --route)")
     ap.add_argument("--plain", action="store_true", help="no HUD")
+    ap.add_argument("--no-keys", action="store_true", help="LIVE, READ-ONLY: read the game and run the whole pilot, but Controls "
+                    "talks to a recorder - no key is sent; the would-be key stream is written to logs/nav/<id>.keys.txt")
     ap.add_argument("--fixed", type=float, help="nav's test heading mode: NOT ported (refused)")
     ap.add_argument("--replay", help="OFFLINE: a memlog run directory to fly over (with --dry-run)")
     ap.add_argument("--dry-run", action="store_true", help="OFFLINE: recording fake emulator, nothing sent (needs --replay)")
@@ -343,7 +409,9 @@ def main(argv=None):
     if args.replay or args.dry_run:
         if not (args.replay and args.dry_run): raise SystemExit("fly: --replay and --dry-run go together (offline mode)")
         dry_run(args); return 0
-    live(args)
+    try: live(args)
+    except KeyboardInterrupt:
+        print("fly: stopped (SIGINT / SIGTERM) - keys released", flush=True); return 130
     return 0
 
 
