@@ -1,6 +1,6 @@
 # F-19 refactor plan
 
-Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25); WP-6, WP-7b, WP-8 (2026-10-26). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
+Draft, 2026-10-24. Done: WP-0, WP-1, WP-2, WP-9, WP-3, WP-4, WP-5 (2026-10-25); WP-6, WP-7b, WP-8, WP-7a (2026-10-26). Waiting on a live session: `research/scripts/probe_reader.py` (read-only, in flight), `select_by_seed`, finding START's menu/cursor variables, `unstick_keys` memory check. This turns the ad-hoc `scripts/` + `analysis/` tree into one layered `f19` package. It is based on a
 read-only inventory of the current code (three parallel passes: pilot/runtime, planner/rules, research-vs-product).
 
 ## 1. Goals and non-goals
@@ -341,6 +341,22 @@ At most four subagents run at once. 7b can start in wave 3 because the `Behavior
   - `terrain_3d` crashed (UnboundLocalError) from WP-0 until WP-3 fixed it (7761a93). The cause was WP-0's path rewrite
     naming the settings `S` while a local `S` shadowed it. No other file has the collision.
   - `radar.md` gives EMV 56 at 10000 ft Veteran; the code gives 55 (it floors `alt // 3` first). One of them is wrong.
+- Found by WP-7a (offline-verified against nav's own code; nothing run live):
+  - Controls vs the FakeControls reference: identical key streams on 28,677 applies. Loops vs nav's inline code:
+    every tick equal over ~33k ticks. Arbiter vs nav's merge: equal on all three replays and the synthetic overlaps.
+  - **One intended behavior difference: overlapping reactions.** nav's three saved speeds fought each other. A missile
+    survival re-pressed full power every tick under a fighter evasion, an evasion's 165 kt target overrode an escape
+    climb's full power, and a fighter restore could leave 165 kt stuck. The arbiter uses one mechanism: the top request
+    wins, and the target from before the episode is restored. Documented in arbiter.py.
+  - Short taps and scancode taps still block for their hold time, as in nav. Only roll keys, the pitch hold and the
+    trigger are non-blocking. Toggle debounce uses the tick's clock. `--fixed` isn't ported.
+  - **WP-7d must still:** make nav.py a shim for `f19.cli.fly`; port nav's start-up checks into `live()` (`check_route`
+    is written but untested); switch to the game Clock as its own commit; decide the Controls API for EJECT and
+    DESIGNATE (both raise ValueError now); wire the FlightDirector in place of StaticRoute (WP-7c); move
+    `parse_missile_world` and `terrain_ahead_probe` into memory/rules, and the radar-system table into gamedata.
+  - **First supervised flight must check:** key latency and hold durations in real time; Settle() plus
+    `Controls.after_load`; hand-over and roll-level on exit; the HUD fed by the real sink; memlog timing; missile-world
+    read cost per tick; the sensitivity Ins loop; SIGINT/SIGTERM release; auto takeoff, attack and landing (never flown).
 - Found by WP-6:
   - `route(state, goal)` timings over 64 synthetic airborne CE states:
     - rejoining the reference route: median 1.9 s, p90 4.8 s, max 12 s
