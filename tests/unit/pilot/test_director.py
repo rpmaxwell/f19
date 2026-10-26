@@ -222,9 +222,10 @@ def test_earning_option_with_a_negative_net_is_skipped_for_the_bail_out(gold):
     assert d.history[-1].kind in ("bail", "eject") and not any(a[0] == "earn:secondary" for a in d.history[-1].attempts)
 
 
-def test_unknown_event_list_means_nothing_to_protect(gold):
-    d, r = make(gold, g=grid(0, **{"7,8": 3}))
-    d.replan(stranded(900), "x", events=None)
+def test_unknown_event_list_waits_and_then_means_nothing_to_protect(gold):
+    d, r = make(gold, g=grid(0, **{"7,8": 3}), max_retries=1)
+    assert d.replan(stranded(900), "x", events=None) is None and d.version == 0 and d._retries == 1     # wait for the score
+    d.replan(stranded(900), "x", events=None)                                                        # retries used up
     assert d.history[-1].kind == "bail"
 
 

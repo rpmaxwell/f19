@@ -590,7 +590,9 @@ class FlightDirector:
                 left = t_end - self.clock()
                 if left <= 0: raise BudgetExceeded("per-candidate budget spent")
                 try:
-                    return self.route_fn(pose, goals if len(goals) > 1 else goals[0], (), left, planner=self.planner)
+                    res = self.route_fn(pose, goals if len(goals) > 1 else goals[0], (), left, planner=self.planner)
+                    res.spliced = goals[0].kind == "rejoin"          # which goal set worked (the active plan's meta)
+                    return res
                 except BudgetExceeded: raise
                 except PlanError as e: err = e
             raise err or PlanError("no goal set")
@@ -598,6 +600,7 @@ class FlightDirector:
 
     def _route_outcome(self, sel, reason, att, pose, skipped, constraints, note=""):
         res, cand = sel.result, sel.candidate
+        cand = dataclasses.replace(cand, follows_reference=bool(getattr(res, "spliced", False)))
         pts = res.points
         route = Route.from_route_json({"points": pts, "profile": dict(self.store.reference.profile),
                                        "summary": {"fuel_landing_lb": res.fuel_end_lb}})
@@ -656,6 +659,10 @@ class FlightDirector:
 
     def _no_landing(self, snap, pose, att):
         state, plan, reason = snap["state"], snap["plan"], snap["reason"]
+        if snap["events"] is None and snap["retries"] < self.max_retries:
+            # the event list has not been read yet (the Runner reads it every second): the score is unknown, and a score
+            # above zero changes what is worth doing: wait a round rather than eject on a guess
+            return Outcome("keep", reason="no landing feasible, but the score is unknown (event list not read yet)", attempts=att)
         bc = self.bail_constraints()
         score, cs = self.score_now(state, snap["events"])
         found = {}
