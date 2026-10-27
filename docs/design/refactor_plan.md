@@ -473,3 +473,14 @@ research/ (stale): 76-110, 184-224, 243-294.
 `Runner._gate_eject` runs on every tick's merged Decision, so every path to EJECT goes through it: the action is dropped,
 there is no exit, and the mission log and banner say so. The director stays terminal after its eject decision (it plans
 no more); the plane keeps flying the current route. Tests: tests/unit/pilot/test_eject_gate.py.
+
+## First director flight fixes (2026-10-27)
+Flight ce_liberec_1027_0916 (no `--auto`, manual takeoff): the live fuel check fired at once (the plan has 84 lb of margin;
+the takeoff burned ~114 lb extra), and the full mission was ruled out by `estimate_rejoin`, which prices the slow, low
+pre-flight reference (898 lb at the end) while the router's own full route ends at ~4,000 lb. The director flew
+secondary>landing. Fixes: (1) the cheap estimate rules out on the straight chain only (`estimate_direct`); (2) a reference
+splice that breaks a constraint falls through to the plain goal set; (3) a router time-out is retried once with 3x the
+budget before a lesser candidate takes over (total budget 30 s). Also: `--auto` turns onto the route as soon as the Takeoff
+behavior is done (`FlyLeg.takeoff_done`), not 6 km on; the old-nav equivalence test switches that off. Tests:
+test_director_liberec.py (fixture plan copied to F19_DATA/fixtures/plans/ce_liberec_1027_0916), test_director.py.
+Still open: a spurious live-fuel replan on a thin-margin plan replaces the stealth reference by the router's direct route.

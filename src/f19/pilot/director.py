@@ -34,7 +34,7 @@ returned in 8 ms, and the caller's 10 ms-sleep loop saw gaps of up to ~230 ms wh
 0.15 s tick period). A process pool would remove that but needs the planner context rebuilt per process (1.5-3 s).
 
 Planning times measured on the real planner (golden CE, 4 states): full-mission rejoin 0.5-2.3 s, landing-only 0.6-1.7 s,
-a whole bail-out chain with three cell routes 1-2.4 s; defaults: budget_s 4 per candidate, total_budget_s 15 per chain.
+a whole bail-out chain with three cell routes 1-2.4 s; defaults: budget_s 4 per candidate (a time-out is retried once with 3x), total_budget_s 30 per chain.
 
 The plan is built from the state at the trigger; by adoption the plane has flown a few seconds on. The new Route starts
 at that old pose; FlyLeg joins the nearest leg (the plane is some hundred metres from it).
@@ -169,7 +169,7 @@ class Selection:
 
 
 def first_feasible(state, candidates, constraints, estimate, plan, *, profile=None, planner=None, budget_s=4.0,
-                   total_budget_s=15.0, clock=time.monotonic):
+                   total_budget_s=30.0, clock=time.monotonic):
     """The first candidate that survives, in order.
 
     estimate(state, cand) -> Estimate | None   the cheap lower bound; a constraint with .ok(est, profile) that fails
@@ -197,7 +197,12 @@ def first_feasible(state, candidates, constraints, estimate, plan, *, profile=No
         if left <= 0:
             attempts.append(Attempt(cand.name, "out_of_time")); continue
         try:
-            res = plan(state, cand, min(budget_s, left))
+            try:
+                res = plan(state, cand, min(budget_s, left))
+            except BudgetExceeded:                           # a slow candidate is not an infeasible one: once more, 3x the time,
+                left = t_end - clock()                       # before a lesser candidate takes its place (Liberec 2026-10-27)
+                if left <= 0: raise
+                res = plan(state, cand, min(3 * budget_s, left))
         except BudgetExceeded as e:
             attempts.append(Attempt(cand.name, "budget", clock() - t0, str(e))); continue
         except PlanError as e:
@@ -275,7 +280,7 @@ class FlightDirector:
     time between two plan starts (director clock = game s). check_period_s: live constraint check period."""
 
     def __init__(self, mission, reference, planner=None, *, planner_factory=None, constraints=None, territory=None,
-                 route_fn=None, executor=None, budget_s=4.0, total_budget_s=15.0, min_gap_s=10.0, check_period_s=5.0,
+                 route_fn=None, executor=None, budget_s=4.0, total_budget_s=30.0, min_gap_s=10.0, check_period_s=5.0,
                  retry_s=8.0, max_retries=2, bail_reserve_lb=100.0, bail_cells=3, bail_fractions=None,
                  arrive_km=None, clock=time.monotonic):
         self.mission, self.plan = mission, MissionPlan.from_mission(mission)
@@ -582,7 +587,8 @@ class FlightDirector:
 
         def estimate(state, cand):
             P = self._profile()
-            if cand.rejoin_index is not None: return est_mod.estimate_rejoin(ref, pose, P, cand.rejoin_index)
+            # rule-out only on the straight chain: the rejoin estimate prices the pre-flight reference (slow, low, radar-
+            # avoiding), which the plain goal set beats by thousands of lb (2026-10-27, 12.7k vs 9.4k lb burned)
             return est_mod.estimate_direct(pose, cand.chain_xy, P) if cand.chain_xy else None
         return estimate
 
@@ -597,6 +603,8 @@ class FlightDirector:
                 try:
                     res = self.route_fn(pose, goals if len(goals) > 1 else goals[0], (), left, planner=self.planner)
                     res.spliced = goals[0].kind == "rejoin"          # which goal set worked (the active plan's meta)
+                    if res.spliced and goals is not cand.goal_sets[-1] and any(c.check(res, self.planner) for c in self.constraints):
+                        continue                                     # the reference splice breaks a constraint: try the plain goals
                     return res
                 except BudgetExceeded: raise
                 except PlanError as e: err = e

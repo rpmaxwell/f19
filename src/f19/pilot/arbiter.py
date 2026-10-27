@@ -149,7 +149,7 @@ class Arbiter:
                 self.tko = Takeoff(self.cruise_kt, self.cruise_ft)
             if self.tko is not None and not self.tko.done:
                 c = self.tko.step(state, ctx); take(c, "takeoff")
-                if c.done: events.append("takeoff done")
+                if c.done: events.append("takeoff done"); self.fly_leg.takeoff_done = True
             if m.auto and self.phase == "route" and self.attack is None:
                 role = self.fly_leg.attack_role(state, ctx, self.attacks_done, self.attack_now)
                 if role:

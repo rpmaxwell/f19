@@ -180,6 +180,7 @@ def test_arbiter_matches_nav_merge_on_replays(run_id, margin, egame):
     recs = _records(R)
     saved = MW.MissileWatch.BUDGET_S, MissileWatch.BUDGET_S
     saved_m = ph.TerrainEscape.MARGIN_FT, TerrainEscape.MARGIN_FT
+    FlyLeg.takeoff_done = property(lambda self: False, lambda self, v: None)   # nav turned 6 km on; the new stack (2026-10-27) turns when the takeoff is done
     MW.MissileWatch.BUDGET_S = MissileWatch.BUDGET_S = 1e9
     if margin: ph.TerrainEscape.MARGIN_FT = TerrainEscape.MARGIN_FT = margin
     db = RecSnapDB(R)
@@ -208,6 +209,7 @@ def test_arbiter_matches_nav_merge_on_replays(run_id, margin, egame):
     finally:
         MW.MissileWatch.BUDGET_S, MissileWatch.BUDGET_S = saved
         ph.TerrainEscape.MARGIN_FT, TerrainEscape.MARGIN_FT = saved_m
+        FlyLeg.takeoff_done = False
     if margin: assert "terrain_escape" in cmp.behaviors
     assert cmp.equal == cmp.n, "\n".join(cmp.diffs)
     assert cmp.n > 200

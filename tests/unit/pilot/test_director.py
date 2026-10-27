@@ -48,7 +48,7 @@ def test_fuel_too_low_for_the_secondary_drops_it(gold):
     d, r = make(gold, FakeRouter(low))
     route = d.replan(state_at(d.reference, 10), "fuel")
     assert d.history[-1].candidate == "primary>landing" and d.history[-1].skipped == (K.SECONDARY,)
-    assert [roles(c) for c in r.calls] == [("rejoin",), ("primary", "landing")]       # full fails the real check, then the next
+    assert [roles(c) for c in r.calls] == [("rejoin",), ("primary", "secondary", "landing"), ("primary", "landing")]   # the splice, plain full, then the next
     assert [a[1] for a in d.history[-1].attempts] == ["infeasible", "ok"]
     assert d.plan.status(K.SECONDARY) is S.SKIPPED and d.plan.status(K.PRIMARY) is S.PENDING
     assert route.points[-1].kind == "landing"
@@ -68,7 +68,8 @@ def test_landing_only(gold):
     d, r = make(gold, FakeRouter(rule))
     d.replan(state_at(d.reference, 10), "x")
     assert d.history[-1].candidate == "landing" and set(d.history[-1].skipped) == {K.PRIMARY, K.SECONDARY}
-    assert [roles(c) for c in r.calls] == [("rejoin",), ("primary", "landing"), ("secondary", "landing"), ("landing",)]
+    assert [roles(c) for c in r.calls] == [("rejoin",), ("primary", "secondary", "landing"), ("primary", "landing"),
+                                         ("secondary", "landing"), ("landing",)]
     assert d.plan.pending_kinds() == (K.LANDING,)
 
 
@@ -102,7 +103,7 @@ def test_estimate_rules_candidates_out_before_the_router(gold):
 
 
 def test_estimate_passes_but_the_real_route_fails_falls_through(gold):
-    rule = lambda goals, pose, b: 50.0 if len(goals) == 1 and goals[0].kind == "rejoin" else 4000.0
+    rule = lambda goals, pose, b: 50.0 if any(g.role == "secondary" or g.kind == "rejoin" for g in goals) else 4000.0
     d, r = make(gold, FakeRouter(rule))
     d.replan(state_at(d.reference, 10), "x")
     a = d.history[-1].attempts
@@ -247,3 +248,14 @@ def test_territory_sides_and_nearest_points():
     assert t.side(-1, 0) == "off-map" and t.side(16 * 2048, 0) == "off-map"
     (d, p), = t.ranked_points("friendly", (0.0, 3 * 2048 + 1000.0), inset=128.0)
     assert 3 * 2048 + 128 <= p[0] <= 4 * 2048 - 128 and t.side(*p) == "friendly" and p[0] == 3 * 2048 + 128 and p[1] == 3 * 2048 + 1000.0
+
+
+def test_a_splice_that_breaks_the_reserve_falls_back_to_the_plain_goals(gold):
+    """2026-10-27: the reference splice ends below the reserve (the pre-flight route is slow and low), the router's own
+    full mission does not: the full mission is flown, not dropped."""
+    rule = lambda goals, pose, b: 100.0 if any(g.kind == "rejoin" for g in goals) else 2000.0
+    d, r = make(gold, FakeRouter(rule))
+    d.replan(state_at(d.reference, 10), "x")
+    h = d.history[-1]
+    assert h.candidate == "full" and h.skipped == () and not d.meta.follows_reference
+    assert [roles(c) for c in r.calls] == [("rejoin",), ("primary", "secondary", "landing")]

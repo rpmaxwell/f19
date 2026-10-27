@@ -212,3 +212,19 @@ def test_fly_leg_triggers_replay(run_id):
         if logged: assert abs(t - logged[0]) < 1.0, (role, t, logged)
     print(f"fly_leg triggers {run_id}: attack starts {started}, nav events "
           f"{ {ro: R.event_times(f'{ro} attack start')[:1] for ro in started} }")
+
+
+def test_takeoff_done_turns_onto_the_route_at_once():
+    """2026-10-27: --auto leaves the runway heading as soon as the Takeoff behavior is done, not 6 km on."""
+    from f19.core.clock import ManualClock
+    from f19.core.types import Attitude, FlightContext, GameState, Position, Route, RoutePoint, Systems
+    route = Route((RoutePoint(10000.0, 30000.0, "Takeoff (Base)"), RoutePoint(10000.0, 29000.0, "Climb-out"),
+                   RoutePoint(14000.0, 20000.0, "WP"), RoutePoint(14000.0, 10000.0, "Landing")))
+    ctx = FlightContext(ManualClock(0.0), route=route)
+    mk = lambda y, alt: GameState(t=0.0, pos=Position(10000.0, y, alt), att=Attitude(0.0), speed_kt=250.0, systems=Systems(flags=0x01), sensitivity=1)
+    for done in (False, True):
+        f = FlyLeg(); ctx.leg = 1
+        f.step(mk(30000.0, 20), ctx)                          # on the ground: the runway heading is taken
+        f.takeoff_done = done
+        f.step(mk(29900.0, 350), ctx)                         # 1.5 km on, 350 ft
+        assert (f.mode == "route") is done and (ctx.leg == 2) is done

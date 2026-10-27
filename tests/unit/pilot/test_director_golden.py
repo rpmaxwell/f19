@@ -49,11 +49,11 @@ def test_full_mission_rejoins_the_reference(world):
 def test_less_fuel_drops_the_secondary_then_the_chain_goes_on(world):
     ref = world[0]
     d = director(world)
-    st = state_at(ref, 40, fuel=ref.points[40].fuel_lb - 1000)       # two tanks in the loadout
+    st = state_at(ref, 40, fuel=ref.points[40].fuel_lb - 3500)       # two tanks in the loadout; the router's full route then ends under the reserve
     d._progress(st, None, None); d.plan.mark(K.PRIMARY, S.REACHED)
     route = replan(d, st, events=[])
     assert d.history[-1].candidate == "landing" and d.history[-1].skipped == (K.SECONDARY,) and d.plan.status(K.SECONDARY) is S.SKIPPED
-    assert [a[:2] for a in d.history[-1].attempts] == [("full", "ruled_out"), ("landing", "ok")]
+    assert [a[:2] for a in d.history[-1].attempts] == [("full", "infeasible"), ("landing", "ok")]
     assert route.points[-1].kind == "landing" and d.history[-1].fuel_end_lb >= 300
 
 

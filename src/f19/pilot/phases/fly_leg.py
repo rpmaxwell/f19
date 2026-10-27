@@ -50,6 +50,7 @@ class FlyLeg:
     H_RATE_MAX, H_RATE_LOITER = 0.8, 2.5                      # nav's turn-rate caps, deg per real s
 
     def __init__(self):
+        self.takeoff_done = False                             # --auto: the Takeoff behavior finished (the arbiter sets it)
         self.mode = "takeoff"                                 # nav's phase "takeoff" until the climb-out, then "route"
         self.start_pos = self.runway_hdg = None
         self.started = False
@@ -126,7 +127,8 @@ class FlyLeg:
         if self.start_pos is None: self.start_pos = p
         if self.mode == "takeoff":
             if self.runway_hdg is None and alt < 150: self.runway_hdg = state.heading
-            if (dist(p, self.start_pos) >= self.CLIMB_DIST and alt >= self.CLIMB_ALT) or (self.runway_hdg is None and alt >= self.CLIMB_ALT):
+            if (dist(p, self.start_pos) >= self.CLIMB_DIST and alt >= self.CLIMB_ALT) or (self.runway_hdg is None and alt >= self.CLIMB_ALT) \
+                    or self.takeoff_done:       # 2026-10-27: --auto turns onto the route as soon as the takeoff is done
                 self.mode = "route"
                 while W[leg][1] == "Climb-out" and leg < len(W) - 1: leg += 1
             elif self.runway_hdg is not None:

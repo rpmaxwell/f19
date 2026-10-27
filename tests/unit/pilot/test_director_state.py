@@ -142,8 +142,8 @@ def test_budgets_per_candidate_and_total():
         clock.t += 6.0                                          # every router call burns 6 s
         raise BudgetExceeded("spent")
     sel = first_feasible(None, [C("a"), C("b"), C("c"), C("d")], (), None, plan, budget_s=4.0, total_budget_s=15.0, clock=clock)
-    # 6 + 6 = 12 s spent, 3 s left for the third (budget min(4, 3)); the fourth finds the total spent
-    assert [a.verdict for a in sel.attempts] == ["budget", "budget", "budget", "out_of_time"]
+    # a: 6 s, retried once (6 s) = 12 s; b gets the 3 s left, burns 6 and has no time for a retry; c and d find the total spent
+    assert [a.verdict for a in sel.attempts] == ["budget", "budget", "out_of_time", "out_of_time"]
     seen = []
     first_feasible(None, [C("a"), C("b")], (), None, lambda s, c, b: seen.append(b) or Res(1), budget_s=4.0, total_budget_s=2.5, clock=Clock())
     assert seen == [2.5]

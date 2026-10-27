@@ -63,9 +63,10 @@ Send csv/events/keys of the run.
 
 ## (e) Route flight with the director
 ```
-uv run python -m f19.cli.fly --route <plan>/route.json --hdg --alt <cruise_ft> --director --memlog
+uv run python -m f19.cli.fly --route <plan>/route.json --auto --hdg --alt <cruise_ft> --director --memlog
 ```
-Start already airborne on the route. The start-up checks refuse a route for another mission, a plane >10 km from the takeoff
+`--auto` is needed for the attacks (and takeoff / landing): without it only the route and the director run (first director flight, 2026-10-27,
+flew over the secondary and never attacked). Start from the saved state before the mission, or already airborne on the route. The start-up checks refuse a route for another mission, a plane >10 km from the takeoff
 point, or the wrong N/S file. Good: legs advance, a deviation triggers a replan line in the mission log, no eject (a `WOULD EJECT` banner or an
 `EJECT suppressed` event means the director wanted to bail out: send the log, the flight kept going).
 Stop: "director error" lines, a replan that sends the plane somewhere odd. Send events + csv (plan_version column).
