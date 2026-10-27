@@ -349,3 +349,28 @@ def test_unknown_score_waits_instead_of_ejecting(gold):
     assert not d.terminal and o.events[0].startswith("plan kept") and "score is unknown" in o.events[0]
     d.on_tick(st(1003.0), Dec("fly_leg"), events=[])               # events read: score 0, nothing to protect
     assert d.terminal
+
+
+class _Deferred:
+    """An executor that runs the plan only when told (a worker still busy)."""
+    def __init__(self): self.jobs = []
+    def submit(self, fn):
+        from concurrent.futures import Future
+        f = Future(); self.jobs.append((f, fn)); return f
+    def run(self):
+        for f, fn in self.jobs: f.set_result(fn())
+        self.jobs = []
+
+
+def test_a_fuel_violation_while_planning_does_not_make_the_plan_stale(gold):
+    """2026-10-27: the live check fired every check period while the plan for that very violation ran, so every plan
+    was discarded as stale (46 times in 280 s) and the route kept being flown."""
+    ex = _Deferred()
+    d, r = make(gold, executor=ex)
+    low = int(d.reference.points[10].fuel_lb) - 1700
+    d.on_tick(at(d, 1006, fuel=low), Dec("fly_leg"))                      # starts the plan
+    assert len(ex.jobs) == 1
+    for t in (1012, 1018, 1024): d.on_tick(at(d, t, fuel=low), Dec("fly_leg"))     # still running, still violating
+    ex.run()
+    o = d.on_tick(at(d, 1025, fuel=low), Dec("fly_leg"))
+    assert d.version == 1 and o is not None and o.events[0].startswith("plan v1")

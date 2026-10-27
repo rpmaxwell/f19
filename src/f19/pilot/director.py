@@ -407,7 +407,9 @@ class FlightDirector:
         if self.meta.kind in ("earn",) and self._route_end(state): r.append("route end: earning option flown")
         if self._last_check is None or now - self._last_check >= self.check_period_s:
             self._last_check = now
-            if bad := self._live_violations(state):
+            # not while a plan runs: a violation is what that plan is solving, and a fresh one every check period made it
+            # "stale" again and again (46 discards in 280 s, first flight with --auto 2026-10-27)
+            if self._job is None and (bad := self._live_violations(state)):
                 r.append("constraint: " + "; ".join(bad[:2]))
         if self._job is not None and r: self._stale = True            # inputs of the running plan are out of date
 
