@@ -496,3 +496,14 @@ still fine on fuel; (2) the reference splice looks only at reference legs betwee
 run-in (the reference loops back past the plane); (3) FighterWatch descends to 250 ft before turning when the present heading
 is safe there (`descend_first`; margins are altitude dependent), arbiter merges an alt-only override; (4) the camera
 trigger (see attack.py). Open: bearings for in-flight replans; the director's stale-plan handling is fixed (acd3bf5).
+
+### Trust the plan; in-flight router (2026-10-27, third --auto director flight)
+- User rule: the pre-flight route is flown as planned until the plane is meaningfully off it. The director no longer
+  replans when a reaction (fighter / missile / terrain escape) ends with the plane within `off_route_km` (4 km) of the
+  active route, and the live constraint (fuel) check runs only when the plane is more than that off the route. Beyond it,
+  the old behavior (replan from the current state). Real fuel trouble on the route is not re-checked: the pre-flight plan
+  was made with the same rules.
+- `planner.api.route` retries with a ladder of variants (mid attack bearings, plane turned onto them, start heading toward
+  the first goal) when the first attempt fails; rejoin searches are windowed to the part of the reference still ahead.
+  Probed from t=744 and t=1374 of flight 1793113975 (tests/unit/pilot/test_director_liberec.py): the full mission routes.
+- Untested live. Not changed: the planner objective ignores the fuel margin; the director idles after a suppressed eject.

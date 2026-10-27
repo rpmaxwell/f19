@@ -30,7 +30,7 @@ def test_on_tick_does_not_wait_for_a_slow_planner(gold):
 
     def rule(goals, pose, b):
         started.set(); gate.wait(10); return 5000.0
-    d = FlightDirector(mission, ref, fake_planner(), route_fn=FakeRouter(rule), executor=ThreadExecutor())
+    d = FlightDirector(mission, ref, fake_planner(), route_fn=FakeRouter(rule), executor=ThreadExecutor(), off_route_km=-1.0)
     st = lambda t: state_at(ref, 10, t=t)
     d.on_tick(st(1000), Dec("missile"))
     t0 = time.monotonic(); d.on_tick(st(1001), Dec("fly_leg")); dt = time.monotonic() - t0
@@ -49,7 +49,7 @@ def test_only_one_job_at_a_time_and_new_triggers_mark_it_stale(gold):
     ref, mission = gold
     gate = threading.Event()
     r = FakeRouter(lambda g, p, b: (gate.wait(10), 5000.0)[1])
-    d = FlightDirector(mission, ref, fake_planner(), route_fn=r, executor=ThreadExecutor(), min_gap_s=1.0)
+    d = FlightDirector(mission, ref, fake_planner(), route_fn=r, executor=ThreadExecutor(), off_route_km=-1.0, min_gap_s=1.0)
     st = lambda t: state_at(ref, 10, t=t)
     d.on_tick(st(1000), Dec("missile")); d.on_tick(st(1001), Dec("fly_leg"))
     d.on_tick(st(1005), Dec("terrain_escape")); d.on_tick(st(1006), Dec("fly_leg"))        # a new deviation while planning
@@ -67,7 +67,7 @@ def test_only_one_job_at_a_time_and_new_triggers_mark_it_stale(gold):
 
 def test_a_planner_crash_in_the_worker_is_contained(gold):
     ref, mission = gold
-    d = FlightDirector(mission, ref, fake_planner(), route_fn=FakeRouter(lambda g, p, b: KeyError("bug")), executor=ThreadExecutor())
+    d = FlightDirector(mission, ref, fake_planner(), route_fn=FakeRouter(lambda g, p, b: KeyError("bug")), executor=ThreadExecutor(), off_route_km=-1.0)
     st = lambda t: state_at(ref, 10, t=t)
     d.on_tick(st(1000), Dec("missile")); outs = [d.on_tick(st(1001), Dec("fly_leg"))]
     assert _wait(lambda: d._job is None or d._job.done())
@@ -79,7 +79,7 @@ def test_a_planner_crash_in_the_worker_is_contained(gold):
 def test_worker_threads_are_daemons(gold):
     ref, mission = gold
     gate = threading.Event()
-    d = FlightDirector(mission, ref, fake_planner(), route_fn=FakeRouter(lambda g, p, b: (gate.wait(10), 1.0)[1]), executor=ThreadExecutor())
+    d = FlightDirector(mission, ref, fake_planner(), route_fn=FakeRouter(lambda g, p, b: (gate.wait(10), 1.0)[1]), executor=ThreadExecutor(), off_route_km=-1.0)
     d.on_tick(state_at(ref, 10, t=1000), Dec("missile")); d.on_tick(state_at(ref, 10, t=1001), Dec("fly_leg"))
     assert _wait(lambda: any(t.name == "f19-director-plan" for t in threading.enumerate()))
     assert all(t.daemon for t in threading.enumerate() if t.name == "f19-director-plan")

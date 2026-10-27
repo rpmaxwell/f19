@@ -23,6 +23,7 @@ def make(gold, router=None, g=None, **kw):
     ref, mission = gold
     router = router or FakeRouter()
     kw.setdefault("executor", InlineExecutor())
+    kw.setdefault("off_route_km", -1.0)                  # the plane counts as off its route; the gate has its own tests
     return FlightDirector(mission, ref, fake_planner(g), route_fn=router, **kw), router
 
 
@@ -374,3 +375,27 @@ def test_a_fuel_violation_while_planning_does_not_make_the_plan_stale(gold):
     ex.run()
     o = d.on_tick(at(d, 1025, fuel=low), Dec("fly_leg"))
     assert d.version == 1 and o is not None and o.events[0].startswith("plan v1")
+
+
+# ------------------------------------------------------------------------------------------------ trust the plan
+def test_a_reaction_that_leaves_the_plane_on_its_route_does_not_replan(gold):
+    d, r = make(gold, off_route_km=4.0)
+    d.on_tick(at(d, 1000), Dec("fighter"))
+    assert d.on_tick(at(d, 1001, off_km=1.0), Dec("fly_leg")) is None
+    assert d.version == 0 and not r.calls and not d._reasons
+    assert any("keeping the plan" in m for m in d.log)
+
+
+def test_a_reaction_that_leaves_the_plane_far_off_replans(gold):
+    d, r = make(gold, off_route_km=4.0)
+    d.on_tick(at(d, 1000), Dec("terrain_escape"))
+    d.on_tick(at(d, 1001, off_km=9.0), Dec("fly_leg"))
+    assert d.version == 1 and "deviation ended: terrain_escape" in d.history[-1].reason and "9.0 km off" in d.history[-1].reason
+
+
+def test_the_live_constraint_is_not_checked_on_the_route(gold):
+    d, r = make(gold, off_route_km=4.0, check_period_s=1.0)
+    for t in range(1000, 1010): d.on_tick(at(d, t, fuel=300), Dec("fly_leg"))                # 300 lb, on the route: fly it
+    assert d.version == 0 and not r.calls
+    for t in range(1010, 1020): d.on_tick(at(d, t, fuel=300, off_km=8.0), Dec("fly_leg"))     # far off with no fuel: replan
+    assert d.version >= 1 or r.calls

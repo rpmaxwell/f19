@@ -280,8 +280,8 @@ class FlightDirector:
     time between two plan starts (director clock = game s). check_period_s: live constraint check period."""
 
     def __init__(self, mission, reference, planner=None, *, planner_factory=None, constraints=None, territory=None,
-                 route_fn=None, executor=None, budget_s=4.0, total_budget_s=30.0, min_gap_s=10.0, check_period_s=5.0,
-                 retry_s=8.0, max_retries=2, bail_reserve_lb=100.0, bail_cells=3, bail_fractions=None,
+                 route_fn=None, executor=None, budget_s=8.0, total_budget_s=60.0, min_gap_s=10.0, check_period_s=5.0,
+                 off_route_km=4.0, retry_s=8.0, max_retries=2, bail_reserve_lb=100.0, bail_cells=3, bail_fractions=None,
                  arrive_km=None, clock=time.monotonic):
         self.mission, self.plan = mission, MissionPlan.from_mission(mission)
         self.store = PlanStore(reference)
@@ -291,6 +291,7 @@ class FlightDirector:
         self.route_fn = route_fn or api.route
         self.executor = executor or ThreadExecutor()
         self.budget_s, self.total_budget_s, self.min_gap_s, self.check_period_s = budget_s, total_budget_s, min_gap_s, check_period_s
+        self.off_route_km = off_route_km
         self.retry_s, self.max_retries, self.bail_reserve_lb, self.bail_cells = retry_s, max_retries, bail_reserve_lb, bail_cells
         self.bail_fractions = {**BAIL_FRACTION, **(bail_fractions or {})}
         self.arrive_km = {**ARRIVE_KM, **(arrive_km or {})}
@@ -398,7 +399,11 @@ class FlightDirector:
         beh = getattr(decision, "behavior", "")
         if beh in REACTIONS: self._reacting = beh
         elif self._reacting:
-            r.append(f"deviation ended: {self._reacting}"); self._reacting = None
+            # trust the plan: a reaction that left the plane near its route needs no replan, the arbiter rejoins the leg
+            if (off := self.off_route_km_now(state)) is None or off > self.off_route_km:
+                r.append(f"deviation ended: {self._reacting}, {'route unknown' if off is None else f'{off:.1f} km off the route'}")
+            else: self.log.append(f"{now:.0f} deviation ended: {self._reacting}, {off:.1f} km off the route; keeping the plan")
+            self._reacting = None
         if any(k in TARGET_KINDS or k is WaypointKind.LANDING for k in changed) and not self.meta.follows_reference:
             r.append("waypoint reached: " + ", ".join(k.value for k in changed))
         if self.deadline_passed(state, now): r.append("deadline")
@@ -409,9 +414,20 @@ class FlightDirector:
             self._last_check = now
             # not while a plan runs: a violation is what that plan is solving, and a fresh one every check period made it
             # "stale" again and again (46 discards in 280 s, first flight with --auto 2026-10-27)
-            if self._job is None and (bad := self._live_violations(state)):
+            # and not while the plane is on its route: the pre-flight plan was made with the same rules, fly it
+            if self._job is None and self._meaningfully_off(state) and (bad := self._live_violations(state)):
                 r.append("constraint: " + "; ".join(bad[:2]))
         if self._job is not None and r: self._stale = True            # inputs of the running plan are out of date
+
+    def off_route_km_now(self, state):
+        """Distance (km) from the plane to the active route's polyline, None when there is none."""
+        pts = getattr(self.meta.ref, "points", None)
+        if not pts or len(pts) < 2: return None
+        return est_mod.nearest_leg(pts, state.xy)[2] / K
+
+    def _meaningfully_off(self, state):
+        off = self.off_route_km_now(state)
+        return off is None or off > self.off_route_km
 
     def _route_end(self, state):
         e = self.meta.end_xy

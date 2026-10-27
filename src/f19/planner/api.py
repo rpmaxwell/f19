@@ -13,6 +13,7 @@
 
 Goals: Goal.point(x, y), Goal.target(role, mode, bearing), Goal.landing(base, side), Goal.rejoin(points, index).
 """
+import dataclasses
 import math
 import time
 from dataclasses import dataclass, field
@@ -279,6 +280,50 @@ def _join_turn(pts, tail):
     return tot
 
 
+def _goal_xy(pl, g, prev):
+    """Where a goal is (None: unknown), for the variants below."""
+    if g.kind == "point": return (g.x, g.y)
+    if g.kind == "target":
+        t = next((t for t in pl.M["targets"] if t["role"].rstrip("?") == g.role), None)
+        return None if t is None else tuple(pl.targets((g.role.rstrip("?"),))[0]["xy"])
+    if g.kind == "landing":
+        try: return tuple(_landing_piece(pl, g, prev)["pts"][0][0])
+        except Exception: return None                      # noqa: BLE001
+    return None
+
+
+def _variants(pl, pose, goals):
+    """(pose, goals) the router tries in order after the plain one fails with a PlanError (2026-10-27, Liberec: the first
+    attack bearing straight in from where the plane is often needs a U-turn into a mountain on the way on, and a plane
+    heading away from its goal cannot always turn inside the walls). 1. the attack bearing that is the half-turn between
+    the way in and the way on (both senses), per target without a bearing; 2. the pose's heading turned toward the first
+    goal (the autopilot turns onto the route anyway)."""
+    prev, xy = pose.xy, []
+    for g in goals:
+        xy.append(_goal_xy(pl, g, prev))
+        if xy[-1] is not None: prev = xy[-1]
+    for i, g in enumerate(goals):
+        if g.kind != "target" or g.bearing is not None or xy[i] is None: continue
+        a = xy[i - 1] if i and xy[i - 1] is not None else pose.xy
+        nxt = next((q for q in xy[i + 1:] if q is not None), None)
+        if nxt is None: continue
+        h_in, h_out = hdg(unit(np.subtract(xy[i], a))), hdg(unit(np.subtract(nxt, xy[i])))
+        mid = (h_in + ((h_out - h_in + 180) % 360 - 180) / 2) % 360
+        mids = [(mid, True), ((mid + 180) % 360, True)]
+        for b, _ in mids:
+            yield pose, tuple(dataclasses.replace(x, bearing=float(b)) if j == i else x for j, x in enumerate(goals))
+        for b, _ in mids:                                  # and the plane already turned onto that bearing (as the autopilot will)
+            if abs((b - pose.heading + 180) % 360 - 180) > 20:
+                yield dataclasses.replace(pose, heading=float(b)), tuple(
+                    dataclasses.replace(x, bearing=float(b)) if j == i else x for j, x in enumerate(goals))
+    first = next((q for q in xy if q is not None), None)
+    if first is not None:
+        h0 = hdg(unit(np.subtract(first, pose.xy)))
+        for off in (0.0, 40.0, -40.0):
+            h = (h0 + off) % 360
+            if abs((h - pose.heading + 180) % 360 - 180) > 20: yield dataclasses.replace(pose, heading=h), goals
+
+
 def route(state, goal, constraints=(), budget_s=10.0, *, planner, margins_km=(40.0, 120.0), lead_km=2.0, land=False,
           rejoin_tries=5):
     """Route from the current pose to `goal` (a Goal or a sequence of Goals, flown in order).
@@ -299,6 +344,19 @@ def route(state, goal, constraints=(), budget_s=10.0, *, planner, margins_km=(40
     goals = (goal,) if isinstance(goal, Goal) else tuple(goal)
     if not goals: raise ValueError("route(): no goal")
     if land and goals[-1].kind not in ("landing", "rejoin"): goals += (Goal.landing(),)
+    if any(g.kind == "rejoin" for g in goals[:-1]): raise ValueError("route(): a rejoin can only be the last goal")
+    try:
+        return _route_once(pose, goals, constraints, deadline, t0, pl, margins_km, lead_km, rejoin_tries)
+    except PlanError as first:
+        if any(g.kind == "rejoin" for g in goals): raise
+        for pose_v, goals_v in _variants(pl, pose, goals):
+            if time.monotonic() > deadline: break
+            try: return _route_once(pose_v, goals_v, constraints, deadline, t0, pl, margins_km, lead_km, rejoin_tries, goals)
+            except PlanError: continue
+        raise first
+
+
+def _route_once(pose, goals, constraints, deadline, t0, pl, margins_km, lead_km, rejoin_tries, asked=None):
     if any(g.kind == "rejoin" for g in goals[:-1]): raise ValueError("route(): a rejoin can only be the last goal")
     u = from_hdg(pose.heading)
     p0 = np.array(pose.xy, float); p1 = p0 + u * lead_km * K
@@ -347,7 +405,7 @@ def route(state, goal, constraints=(), budget_s=10.0, *, planner, margins_km=(40
     # plan() checks the landing reserve on every plan; here the constraints decide (a route may end in the air)
     errors = [e for e in r["errors"] if not e.startswith("fuel at landing")]
     best = {**r, "tag": "in-flight"}
-    res = RouteResult(pose, goals, r["pts"], _report.route_points(pl, best), r["fuel"], errors, [], r["log"], r["cost"],
+    res = RouteResult(pose, asked or goals, r["pts"], _report.route_points(pl, best), r["fuel"], errors, [], r["log"], r["cost"],
                       0.0, r)
     for c in constraints: res.violations += list(c.check(res, pl))
     res.elapsed_s = time.monotonic() - t0
