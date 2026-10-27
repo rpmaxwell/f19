@@ -27,7 +27,11 @@ from f19.pilot.phases._common import K, bearing, command_of, wrap
 
 class FighterWatch:
     name, priority = "fighter", 40
-    WATCH_KM_MIN, IL76_WATCH_KM, CLEAR_S, MARGIN = 25.0, 70.0, 15.0, 10.0
+    WATCH_KM_MIN, IL76_WATCH_KM, CLEAR_S = 25.0, 70.0, 15.0
+    # 2026-10-27: the margin a heading must stay under, per difficulty. Elite flights: the margin predicts the game's alert
+    # rises well (44 rises, 95 % at margin >= -5, one below -10), so -10 stays there. Veteran (5 flights, 8 evasions, none
+    # with a margin >= 0, no fighter alert ever above 0): the -10 only cost minutes off the route, so 0 = "would be seen".
+    MARGIN, MARGIN_ELITE = 0.0, 10.0
     FAN_STEP, LOOKAHEAD_S, RATE, EVADE_KT = 15, 30.0, 3.0, 165
     # 2026-10-22: the evasion flew on at the planner's 700 ft (+13 EMV at Elite) and flipped its heading 15 -> 195 ->
     # 180 -> 15 -> 0 -> 135 -> 315 in two minutes, never settling into an aspect. Now: down to EVADE_ALT_FT, and the
@@ -35,15 +39,18 @@ class FighterWatch:
     EVADE_ALT_FT, KEEP_MARGIN = 250, 3.0
     COVER_KM, COVER_INSET_KM = 45.0, 4.0
 
-    def __init__(self, terrain_type=None, clutter=None, descend_first=True):
-        """terrain_type(x, y) -> 0 mountain .. 3 sea; clutter(x, y) -> territory grid byte (radar clutter)."""
-        self.tt, self.cl, self.descend_first = terrain_type, clutter, descend_first
+    def __init__(self, terrain_type=None, clutter=None, descend_first=True, legacy=False):
+        """terrain_type(x, y) -> 0 mountain .. 3 sea; clutter(x, y) -> territory grid byte (radar clutter).
+        legacy: the trigger of scripts/phases.py FighterWatch (margin 10 at every difficulty), for the equivalence tests."""
+        self.tt, self.cl, self.descend_first, self.legacy = terrain_type, clutter, descend_first, legacy
         self.specs = {t: rg.aircraft_spec(t) for t in range(12)}
         self.hist, self.alerts, self.state, self.clear_since, self.want, self.mode = {}, {}, "off", None, None, ""
         self.nearest = ""
         self.done = False
 
     def wants_control(self, state, ctx): return self.state != "off"
+
+    def margin_for(self, opp): return self.MARGIN_ELITE if self.legacy or opp >= 3 else self.MARGIN
 
     def _margin(self, a, p, hdg, kt, alt, opp, bank=0.0):
         sp = self.specs.get(a["type"], {})
@@ -98,7 +105,7 @@ class FighterWatch:
             if now - self.clear_since < self.CLEAR_S: return self._ov(), ev
             self.state, self.clear_since = "off", None
             return {}, ev + ["fighter evasion: clear, back to the route"]
-        kt = self.EVADE_KT
+        kt, M = self.EVADE_KT, self.margin_for(opp)
         ahead = [self._ahead(a, p, self.LOOKAHEAD_S) for _, a in threats]
         def worst(h, bank=0.0, a_ft=None):
             a_ft = alt if a_ft is None else a_ft
@@ -110,25 +117,25 @@ class FighterWatch:
         # 40-60% EMV): when the present heading is safe at EVADE_ALT_FT, only descend and keep the route (the first
         # flights' evasions flew minutes off it at 500-700 ft with a margin of -10).
         if self.descend_first and self.state in ("off", "low") and alt > self.EVADE_ALT_FT + 20:
-            if worst(hdg, 0.0, self.EVADE_ALT_FT) < -self.MARGIN:
+            if worst(hdg, 0.0, self.EVADE_ALT_FT) < -M:
                 if self.state == "off":
                     names = ", ".join(f"{x['name']} {dd:.0f}km" for dd, x in sorted(threats, key=lambda t: t[0])[:3])
-                    if cur >= -self.MARGIN:
+                    if cur >= -M:
                         ev.append(f"fighter watch ({names}): margin {cur:+.0f} at {alt:.0f} ft, {worst(hdg, 0.0, self.EVADE_ALT_FT):+.0f} at "
                                   f"{self.EVADE_ALT_FT} - descending, route kept")
                         self.state, self.mode = "low", "low"
                 if self.state == "low": return self._ov(), ev
-        if cur < -self.MARGIN and (self.state == "off" or inside):
+        if cur < -M and (self.state == "off" or inside):
             if self.state == "off": return {}, ev                # nothing sees us on this heading: no need to act
         cover = None if inside else self._cover(p)
         goal = bearing(p, cover[1]) if cover else route_want
         fan = [(h, worst(h, 25.0)) for h in range(0, 360, self.FAN_STEP)]
-        safe = [h for h, m in fan if m < -self.MARGIN]
+        safe = [h for h, m in fan if m < -M]
         best_m = min(m for _, m in fan)
         prev = worst(self.want, 25.0) if self.state == "evade" and self.want is not None else None
-        if prev is not None and (prev < -self.MARGIN or (not safe and prev <= best_m + self.KEEP_MARGIN)):
+        if prev is not None and (prev < -M or (not safe and prev <= best_m + self.KEEP_MARGIN)):
             want, why = self.want, self.mode or "keeping"                     # no flip-flopping while it still works
-        elif cur < -self.MARGIN: want, why = hdg, "holding (safe)"
+        elif cur < -M: want, why = hdg, "holding (safe)"
         elif safe: want = min(safe, key=lambda h: abs(wrap(h - goal))); why = "to cover" if cover else "safe heading nearest the route"
         else: want = min(fan, key=lambda hm: hm[1])[0]; why = "least seen"
         if inside and self.tt is not None:                       # in a mountain cell: just stay in it

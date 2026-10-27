@@ -173,7 +173,7 @@ def test_fighter_watch_synthetic():
     """A MiG-29 (doppler) closing head-on with a rising alert, a MiG-23 (pulse) abeam, a friendly F-18, then all gone:
     evade, keep, clear after CLEAR_S."""
     gbyte, ttype = H.theater_grid("CE")
-    old, new = ph.FighterWatch(ttype, gbyte), FighterWatch(ttype, gbyte, descend_first=False)
+    old, new = ph.FighterWatch(ttype, gbyte), FighterWatch(ttype, gbyte, descend_first=False, legacy=True)
     x, y, inputs = 15000.0, 20000.0, []
     for i in range(240):
         t = T0 + i * 0.5
@@ -197,7 +197,7 @@ def test_fighter_watch_replay():
     """Every snapshot of 1792715432 where nav called FighterWatch (as harness.replay_fighter_watch)."""
     R = H.Run.load("1792715432"); fs = product.f19_state()
     gbyte, ttype = H.theater_grid(R.mission.get("theater", "CE"))
-    old, new = ph.FighterWatch(ttype, gbyte), FighterWatch(ttype, gbyte, descend_first=False)
+    old, new = ph.FighterWatch(ttype, gbyte), FighterWatch(ttype, gbyte, descend_first=False, legacy=True)
     db = R.db(); inputs, route_want, ri = [], None, 0
     for t, raw in R.snaps():
         db.load(raw, t)
@@ -262,7 +262,7 @@ def test_missile_watch_replay(run, mode):
 
 
 def test_fighter_watch_descends_before_it_turns():
-    """2026-10-27: a MiG-31 whose margin at 700 ft is within 10 of detection but safe at 250 ft: only the altitude changes
+    """2026-10-27 (Elite, margin 10): a MiG-31 whose margin at 700 ft is within 10 of detection but safe at 250 ft: only the altitude changes
     (state low, no heading), and where 250 ft is not enough either the heading evasion runs as before."""
     gbyte, ttype = H.theater_grid("CE")
     found = {}
@@ -271,9 +271,16 @@ def test_fighter_watch_descends_before_it_turns():
         p = (15000.0, 20000.0)
         ac = [dict(slot=3, x=int(p[0] + 64 * km * 0.6), y=int(p[1] - 64 * km * 0.8), alt=4000, type=3, name="MiG-31", flags=0, alert=0)]
         s = dict(alt=700, spd=190, hdg=0.0)
-        ov, ev = fw._step(_aircraft_state(s, p, ac, 2), p, 100.0, 0.0, ac, 2)
+        ov, ev = fw._step(_aircraft_state(s, p, ac, 3), p, 100.0, 0.0, ac, 3)
         if fw.state == "low": found.setdefault("low", (km, ov, ev))
         if fw.state == "evade": found.setdefault("evade", km)
     assert "low" in found, found
     km, ov, ev = found["low"]
     assert ov == {"fighter": "low", "alt": 250} and "want" not in ov and any("descending, route kept" in e for e in ev)
+
+
+def test_fighter_watch_margin_per_difficulty():
+    """Elite keeps the 10 margin, Veteran and below act only at 0 (a fighter that would not see us is left alone)."""
+    fw = FighterWatch()
+    assert [fw.margin_for(o) for o in range(4)] == [0.0, 0.0, 0.0, 10.0]
+    assert FighterWatch(legacy=True).margin_for(2) == 10.0

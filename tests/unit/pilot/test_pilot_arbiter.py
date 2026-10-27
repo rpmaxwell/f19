@@ -191,7 +191,7 @@ def test_arbiter_matches_nav_merge_on_replays(run_id, margin, egame):
             old = OldNav(db, route_path, args, ph.FuelTransfer(), ph.FighterWatch(ttype, gbyte),
                          ph.TerrainEscape(lambda p_, h_, a_, mk_: probe(p_, h_, a_, max_km=mk_, margin_ft=ph.TerrainEscape.MARGIN_FT)),
                          MW.CmKeys(), gbyte, recs)
-            new = NewNav(Reads(rr), route_path, args, FuelTransfer(), FighterWatch(ttype, gbyte, descend_first=False),
+            new = NewNav(Reads(rr), route_path, args, FuelTransfer(), FighterWatch(ttype, gbyte, descend_first=False, legacy=True),
                          TerrainEscape(lambda p_, h_, a_, mk_: probe(p_, h_, a_, max_km=mk_, margin_ft=TerrainEscape.MARGIN_FT)),
                          CmKeys(), gbyte, recs)
             for i, (t, raw) in enumerate(R.snaps()):
