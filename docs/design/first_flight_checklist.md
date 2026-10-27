@@ -16,6 +16,9 @@ Attach for every step: the csv, events, keys files, `memlog/<epoch>/` if made, a
 - **WallClock** is still in use (game clock is a later, separate step), so time-warp (`TIME xN`) behaves as in nav.
 - `--fixed` is gone. `--plain` is the old one-column text; the HUD is the new tiled one (falls back to plain if it fails).
 - New: `--director` (replans, bail-out/eject chain), `--no-keys`, event-list based HUD.
+- **Eject is gated** (2026-10-26): without `--allow-eject` the director's eject is suppressed. The action is dropped, the mission
+  log says `EJECT suppressed: --allow-eject not given - still flying`, the banner shows `WOULD EJECT`, and the flight goes on
+  (no exit; the director then plans no more). Pass `--allow-eject` only for step (g) or a flight where you want the bail-out.
 - Compare against the old nav's logs of the same flight type: `want` (route heading), `press` column, event texts, phase times
   ("takeoff done", "primary attack done", landing), cycle_s (should stay ~0.15-0.3 s; with `--memlog` ~0.05 s sleep).
 - **Untried live:** Shift+F10 (eject), POKE, key latency/hold times, Settle + `after_load`, hand-over roll-level, the missile-world read cost
@@ -63,7 +66,8 @@ Send csv/events/keys of the run.
 uv run python -m f19.cli.fly --route <plan>/route.json --hdg --alt <cruise_ft> --director --memlog
 ```
 Start already airborne on the route. The start-up checks refuse a route for another mission, a plane >10 km from the takeoff
-point, or the wrong N/S file. Good: legs advance, a deviation triggers a replan line in the mission log, no eject.
+point, or the wrong N/S file. Good: legs advance, a deviation triggers a replan line in the mission log, no eject (a `WOULD EJECT` banner or an
+`EJECT suppressed` event means the director wanted to bail out: send the log, the flight kept going).
 Stop: "director error" lines, a replan that sends the plane somewhere odd. Send events + csv (plan_version column).
 
 ## (f) `--auto`, one phase at a time, from save states

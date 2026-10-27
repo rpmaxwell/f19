@@ -283,6 +283,7 @@ def test_eject_order_reaches_the_emulator_as_shift_f10_and_the_runner_exits(monk
     from test_pilot_runner import _runner, _state
     clock = ManualClock(1000.0)
     r, emu = _runner(lambda n: _state(hdg=(n * 4.0) % 360), clock)
+    r.allow_eject = True                         # fly --allow-eject: without it the eject is suppressed (test_eject_gate.py)
 
     class Provider:
         def __init__(self, inner): self.inner = inner

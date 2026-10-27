@@ -467,3 +467,9 @@ tooling-history: 10-75, 415-481 · memory-map: 111-183, 225-242, 295-414, 482-52
 terrain-theaters: 544-560, 1439-1498 · radar: 561-673, 1287-1360 · scoring-awards: 674-752 · weapons: 753-785, 811-898 ·
 landing-takeoff: 786-810, 899-940 · fuel: 1361-1409 · design/autopilot: 941-1012 · design/planner: 1410-1438 ·
 research/ (stale): 76-110, 184-224, 243-294.
+
+## Eject gate (2026-10-26)
+`fly` suppresses `Action.EJECT` unless `--allow-eject` is passed (user's choice before the first director flight).
+`Runner._gate_eject` runs on every tick's merged Decision, so every path to EJECT goes through it: the action is dropped,
+there is no exit, and the mission log and banner say so. The director stays terminal after its eject decision (it plans
+no more); the plane keeps flying the current route. Tests: tests/unit/pilot/test_eject_gate.py.

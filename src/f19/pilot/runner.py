@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from f19.core.geometry import dist, wrap_deg as wrap
-from f19.core.types import Frame
+from f19.core.types import Action, Frame
 from f19.core.units import K
 from f19.memory import reader as R
 from f19.rules import radar as rg
@@ -161,7 +161,7 @@ class Runner:
 
     def __init__(self, reader, controls, arbiter, loops, bus, clock, route_provider, *, ctx=None, reads=None,
                  memlog=None, sleep=time.sleep, side=None, terrain=None, site_names=None, say=print, event_list_s=1.0,
-                 wall=time.time):
+                 wall=time.time, allow_eject=False):
         from f19.core.types import FlightContext
         self.reader, self.controls, self.arb, self.loops, self.bus = reader, controls, arbiter, loops, bus
         self.clock, self.routes = clock, route_provider
@@ -171,6 +171,7 @@ class Runner:
         self.memlog, self.sleep, self.side, self.terrain = memlog, sleep, side, terrain
         self.site_names, self.say, self.wall = site_names or {}, say, wall
         self.event_list_s = event_list_s
+        self.allow_eject = allow_eject
         self.dead = 0.0
         self.phase_log = []
         self._ev_seen, self._ev_next = None, 0.0
@@ -279,7 +280,7 @@ class Runner:
             ctx.route = route; ctx.leg = 1
         hdg_on = m.hdg
         dec = self.arb.step(state, ctx)
-        dec = self._direct(state, dec, ctx)
+        dec = self._gate_eject(self._direct(state, dec, ctx))
         for e in dec.events: self._event(now, e, events)
         self.controls.apply(dec.command, state, ctx, now)
         for k in dec.key_ups: self.controls.up(k)
@@ -312,6 +313,17 @@ class Runner:
         if order.command is not None:
             dec.command = dec.command.merged(order.command); dec.behavior = "director"
         if order.exit: dec.exit = order.exit
+        return dec
+
+    def _gate_eject(self, dec):
+        """EJECT (Shift+F10) goes to the game only with allow_eject (fly --allow-eject): the key is untried live and a
+        wrong "no landing" decision would end the mission. Suppressed: the action is dropped, there is no exit (the
+        flight goes on, the director stays terminal and plans no more), and the mission log and the banner say so."""
+        if self.allow_eject or Action.EJECT not in dec.command.actions: return dec
+        dec.command = dataclasses.replace(dec.command, actions=tuple(a for a in dec.command.actions if a is not Action.EJECT),
+                                          banner="  DIRECTOR: WOULD EJECT - suppressed (no --allow-eject), still flying", done=None)
+        dec.exit = None
+        dec.events.append("EJECT suppressed: --allow-eject not given - still flying")
         return dec
 
     # ----------------------------------------------------------------------------------------------- telemetry
