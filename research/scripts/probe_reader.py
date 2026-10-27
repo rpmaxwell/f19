@@ -24,7 +24,9 @@ from f19.core.types import GameState  # noqa: E402
 from f19.emulator import Emulator  # noqa: E402
 from f19.memory import MemoryReader  # noqa: E402
 
-MOVING = {"t", "pos.x", "pos.y", "pos.alt_ft", "att.heading", "att.pitch", "att.roll", "speed_kt", "systems.fuel_lb",
+# "hud" is HUD_MSG, the game's message build buffer AND number-formatting scratch (f19_state HUD_MSG): it is rewritten
+# many times a second in flight, so two reads a moment apart differ ('0' then 'GUN 650'). Both decoders are identical.
+MOVING = {"hud", "t", "pos.x", "pos.y", "pos.alt_ft", "att.heading", "att.pitch", "att.roll", "speed_kt", "systems.fuel_lb",
           "emv", "spool"}
 
 
