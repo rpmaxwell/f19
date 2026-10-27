@@ -164,7 +164,10 @@ class Attack:
                 if d < 0.1 or (score >= budget and d < self.photo_km):
                     self.log.append(f"bay never opened ({self.bay_presses} presses of 8): no frame"); self.state = "close"
                 return out
-            if score < 0.8 * budget and self.shots == 0:
+            # the frame needs score < budget; 0.8 x budget was never reached at 700 ft (the look-down term alone is ~7 deg:
+            # best 207 vs 205, first --auto flight 2026-10-27, no frame). Fire from budget - 20 (the score then falls on
+            # for a second or two, the key lags ~0.3 s).
+            if score < min(0.92 * budget, budget - 20) and self.shots == 0:
                 acts.append(Action.FIRE); self.shots += 1; self.next_ok = now + 1.0; self.key = "enter"
                 self.log.append(f"camera fired at {d:.2f} km, score {score:.0f}/{budget}, bay open"); self.state = "close"
             elif d < 0.1:                                              # overflown without a frame

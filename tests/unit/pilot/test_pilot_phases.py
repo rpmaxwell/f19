@@ -246,3 +246,20 @@ def test_gun_attack_equivalent(egame, case):
     if case == "no_repeat":                                                       # pulse: re-press while held
         assert any(a == ("up", "bs") and b == ("down", "bs") for a, b in zip(rep.keys, rep.keys[1:])), rep.keys
     print(f"gun {case}: {rep.ticks} ticks, {rep.n_keys} key events, states {rep.states}, log {new.log}")
+
+
+def test_photo_run_at_700_ft_has_a_firing_point():
+    """First --auto flight 2026-10-27 (Veteran, 700 ft, 6.5 deg nose up): the photo score bottomed at 207 against 0.8 x 256 = 205, so
+    no frame was ever fired although the game's own window (score < 256) was open from 3.5 km to 1 km."""
+    from f19.core.types import Attitude, GameState, Position, Systems
+    from f19.pilot.phases.attack import Attack
+    T = (17352.0, 22200.0)
+    a = Attack("primary", "photo", T, 2, 14.0, 2.0)
+    def score(r):
+        p = (T[0] - r * 0.9, T[1] - r * 0.4)
+        st = GameState(t=0.0, pos=Position(p[0], p[1], 702), att=Attitude(114.0, pitch=6.5), speed_kt=190.0, systems=Systems(flags=0x205), opp=2)
+        return a.photo_score(st, p)
+    best = min(score(r)[0] for r in range(40, 400, 10))
+    budget = score(100)[1]
+    assert budget == 256 and best > 0.75 * budget                       # the 0.8 trigger had ~no margin (207 vs 205 in the flight)
+    assert best < min(0.92 * budget, budget - 20)                       # the new one can

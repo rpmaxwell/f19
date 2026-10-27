@@ -496,7 +496,7 @@ class Attack:
                 if d < 0.1 or (score >= budget and d < self.photo_km):
                     self.log.append(f"bay never opened ({self.bay_presses} presses of 8): no frame"); self.state = "close"
                 return out
-            if score < 0.8 * budget and self.shots == 0:
+            if score < min(0.92 * budget, budget - 20) and self.shots == 0:   # 2026-10-27: see f19.pilot.phases.attack
                 db.tap("enter", TAP); self.shots += 1; self.next_ok = now + 1.0; self.key = "enter"
                 self.log.append(f"camera fired at {d:.2f} km, score {score:.0f}/{budget}, bay open"); self.state = "close"
             elif d < 0.1:                                              # overflown without a frame
