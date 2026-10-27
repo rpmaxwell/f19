@@ -33,10 +33,12 @@ def lb_per_km(P):
 def _xy(p): return float(p["x"]), float(p["y"])
 
 
-def nearest_leg(points, xy):
-    """(i, f, d_units): leg points[i-1] -> points[i] nearest xy, fraction f along it, distance."""
+def nearest_leg(points, xy, window=None):
+    """(i, f, d_units): leg points[i-1] -> points[i] nearest xy, fraction f along it, distance. window: (lo, hi) leg indices
+    to look at (a reference that loops back past the plane would otherwise be projected on at the wrong place)."""
     best = None
-    for i in range(1, len(points)):
+    lo, hi = window if window else (1, len(points) - 1)
+    for i in range(max(1, lo), min(len(points) - 1, hi) + 1):
         (ax, ay), (bx, by) = _xy(points[i - 1]), _xy(points[i])
         L2 = (bx - ax) ** 2 + (by - ay) ** 2 or 1e-9
         f = max(0.0, min(1.0, ((xy[0] - ax) * (bx - ax) + (xy[1] - ay) * (by - ay)) / L2))

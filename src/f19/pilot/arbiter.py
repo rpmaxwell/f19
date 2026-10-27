@@ -206,6 +206,8 @@ class Arbiter:
             if fc.heading is not None:
                 ov = ov.merged(dataclasses.replace(fc, events=())); want = fc.heading; behavior = "fighter"
                 req["fighter"] = fc.speed_kt
+            elif fc.alt is not None:                      # descend only: the route's heading and speed stay
+                ov = ov.merged(Command(alt=fc.alt))
         m_key, self.msnap = "", None
         if self.missile_mode != "off" and self.phase in FLYING and alt > 100 and self.reads is not None:
             try:

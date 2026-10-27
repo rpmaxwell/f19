@@ -259,3 +259,18 @@ def test_a_splice_that_breaks_the_reserve_falls_back_to_the_plain_goals(gold):
     h = d.history[-1]
     assert h.candidate == "full" and h.skipped == () and not d.meta.follows_reference
     assert [roles(c) for c in r.calls] == [("rejoin",), ("primary", "secondary", "landing")]
+
+
+def test_a_better_candidate_lost_to_a_router_error_keeps_the_route_then_gives_in(gold):
+    """2026-10-27: the full mission raised a router mountain error at the first evasion replan; primary>landing routed, the
+    secondary was dropped, and 1,900 lb of fuel flew home unused. The route being flown was fine on fuel: keep it and retry."""
+    broken = {"on": True}
+    rule = lambda goals, pose, b: PlanError("passes within 2.0 km of a mountain") if broken["on"] and (len(goals) == 3 or goals[0].kind == "rejoin") else 5000.0
+    d, r = make(gold, FakeRouter(rule), max_retries=2)
+    st = state_at(d.reference, 10)
+    assert d.replan(st, "a") is None and d.version == 0 and d._retries == 1 and d.plan.pending_kinds() == (K.PRIMARY, K.SECONDARY, K.LANDING)
+    assert d.replan(st, "b") is None and d.version == 0 and d._retries == 2
+    assert d.replan(st, "c") is not None and d.history[-1].candidate == "primary>landing" and d.history[-1].skipped == (K.SECONDARY,)
+    d2, _ = make(gold, FakeRouter(rule), max_retries=2)                         # the pose changes and routes again: full is flown
+    d2.replan(st, "a"); broken["on"] = False
+    assert d2.replan(st, "b") is not None and d2.history[-1].candidate == "full" and d2.history[-1].skipped == ()

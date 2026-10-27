@@ -484,3 +484,15 @@ budget before a lesser candidate takes over (total budget 30 s). Also: `--auto` 
 behavior is done (`FlyLeg.takeoff_done`), not 6 km on; the old-nav equivalence test switches that off. Tests:
 test_director_liberec.py (fixture plan copied to F19_DATA/fixtures/plans/ce_liberec_1027_0916), test_director.py.
 Still open: a spurious live-fuel replan on a thin-margin plan replaces the stealth reference by the router's direct route.
+
+## Second --auto director flight fixes (2026-10-27)
+Flight 1793113975 (Liberec): the secondary was dropped at the first fighter-evasion replan although 1,900 lb of Extra Fuel
+flew home unused. Cause: the plain full-mission route raised a router mountain error near the primary (PlanError: "passes within
+2.0 km of a mountain"), `primary>landing` routed, and the director adopted the lesser plan. Router errors on in-flight replans
+near Liberec (also for `landing` alone at t=1374, which sent the chain to its eject decision, suppressed by the gate) remain a
+planner issue: `route()` lacks the pre-flight search/repair, and the reference's attack bearings (30 / 0) are not reused.
+Fixes: (1) a better candidate lost to an error / time-out keeps the flown route (up to `max_retries` rounds) when it is
+still fine on fuel; (2) the reference splice looks only at reference legs between the last flown target and the next target's
+run-in (the reference loops back past the plane); (3) FighterWatch descends to 250 ft before turning when the present heading
+is safe there (`descend_first`; margins are altitude dependent), arbiter merges an alt-only override; (4) the camera
+trigger (see attack.py). Open: bearings for in-flight replans; the director's stale-plan handling is fixed (acd3bf5).

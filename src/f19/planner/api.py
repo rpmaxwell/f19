@@ -158,6 +158,7 @@ class Goal:
     points: tuple = ()           # rejoin: the reference route.json points
     index: int | None = None     # rejoin: first reference point flown again (None: the first >= join_km ahead)
     join_km: float = 25.0
+    window: tuple | None = None  # rejoin: (lo, hi) reference legs the plane may be projected on (None: all)
 
     @classmethod
     def point(cls, x, y, label=""): return cls("point", float(x), float(y), label)
@@ -169,8 +170,8 @@ class Goal:
     def landing(cls, base=None, side=None): return cls("landing", base=base, side=side)
 
     @classmethod
-    def rejoin(cls, points, index=None, join_km=25.0):
-        return cls("rejoin", points=tuple(points), index=index, join_km=join_km)
+    def rejoin(cls, points, index=None, join_km=25.0, window=None):
+        return cls("rejoin", points=tuple(points), index=index, join_km=join_km, window=window)
 
 
 @dataclass
@@ -199,9 +200,9 @@ class RouteResult:
         return self.fuel["fuel_land"]
 
 
-def rejoin_index(points, xy, join_km=25.0):
+def rejoin_index(points, xy, join_km=25.0, window=None):
     """First reference point at least join_km (along the route) beyond the projection of xy on its nearest leg."""
-    i, f, _ = nearest_leg(points, xy)
+    i, f, _ = nearest_leg(points, xy, window)
     a, b = points[i - 1], points[i]
     along = (1 - f) * math.dist((a["x"], a["y"]), (b["x"], b["y"])) / K
     k = i
@@ -253,14 +254,14 @@ LOOP_DEG = 270.0                # a join that turns this much in total is a loop
 ATTACK_KINDS = ("runin", "photo", "launch", "overfly")
 
 
-def rejoin_candidates(points, xy, join_km=25.0, tries=5):
+def rejoin_candidates(points, xy, join_km=25.0, tries=5, window=None):
     """Reference point indices to rejoin at: join_km x REJOIN_FACTORS along the reference from xy's projection, never
     past its next attack point (a rejoin beyond it would skip the target: the candidates stop at that run-in)."""
-    i, _, _ = nearest_leg(points, xy)
+    i, _, _ = nearest_leg(points, xy, window)
     stop = next((k for k in range(i, len(points) - 1) if points[k].get("kind") in ATTACK_KINDS), len(points) - 2)
     out = []
     for f in REJOIN_FACTORS[:tries]:
-        k = min(rejoin_index(points, xy, join_km * f), stop)
+        k = min(rejoin_index(points, xy, join_km * f, window), stop)
         if k not in out: out.append(k)
         if k == stop: break
     return out
@@ -316,7 +317,7 @@ def route(state, goal, constraints=(), budget_s=10.0, *, planner, margins_km=(40
         seq.append(el)
     last = goals[-1]
     if last.kind == "rejoin":
-        ks = [int(last.index)] if last.index is not None else rejoin_candidates(last.points, pose.xy, last.join_km, rejoin_tries)
+        ks = [int(last.index)] if last.index is not None else rejoin_candidates(last.points, pose.xy, last.join_km, rejoin_tries, last.window)
         tails = [_rejoin_piece(last, pose, k) for k in ks]
     else:
         tails = [seq[-1]]

@@ -535,6 +535,13 @@ class FlightDirector:
             if sel.candidate is not None:
                 flown = set(sel.candidate.waypoints)
                 skipped = tuple(k for k in plan.pending_kinds() if k not in flown and k is not WaypointKind.TAKEOFF)
+                lost = [a for a in sel.attempts[:-1] if a.verdict in ("error", "budget", "out_of_time")]
+                if skipped and lost and snap["retries"] < self.max_retries and not self._live_violations(state):
+                    # a better candidate was lost to a router error / time-out, not proven infeasible, and the route being
+                    # flown is still fine on fuel: keep it and try again from where the plane is by then (2026-10-27: the
+                    # secondary was dropped at the first fighter evasion on a router mountain error, 1,900 lb of fuel unused)
+                    return Outcome("keep", reason=f"{lost[0].candidate} not routable now ({lost[0].verdict}); keeping the route",
+                                   attempts=att)
                 return self._route_outcome(sel, reason, att, pose, skipped, self.constraints)
             if sel.inconclusive and snap["retries"] < self.max_retries:
                 return Outcome("keep", reason="mission chain inconclusive (planner time-out / no path); keeping the route",
@@ -558,9 +565,22 @@ class FlightDirector:
             out.append(self._mission_candidate(seq, pose, "full" if i == 0 else None))
         return out
 
+    def _ref_window(self):
+        """(lo, hi) reference legs the plane can be on: after the last target flown, up to the next pending target's
+        run-in. The reference loops (it comes back past its own start), so the nearest leg alone can be a later part of it:
+        2026-10-27 the plane, 40 km into the loop out to Liberec, projected on the final approach and no splice was tried."""
+        pts, lo, hi = self.ref_points, 1, len(self.ref_points) - 1
+        reached = [k.value for k in TARGET_KINDS if self.plan.status(k) is WaypointStatus.REACHED]
+        for k, p in enumerate(pts):
+            if p.get("role") in reached: lo = max(lo, k + 1)
+        pend = next((k.value for k in self.plan.pending_kinds() if k in TARGET_KINDS), None)
+        if pend is not None:
+            hi = next((k for k, p in enumerate(pts) if p.get("role") == pend and k >= lo), hi)
+        return lo, hi
+
     def _ref_roles_ahead(self, xy):
         """Target roles still ahead on the reference from the plane's projection on it, in order."""
-        i, _, _ = est_mod.nearest_leg(self.ref_points, xy)
+        i, _, _ = est_mod.nearest_leg(self.ref_points, xy, self._ref_window())
         roles = []
         for p in self.ref_points[i:]:
             if p.get("role") and p["role"] not in roles: roles.append(p["role"])
@@ -576,8 +596,9 @@ class FlightDirector:
         splice = lands and ref_ends and [k.value for k in tgt] == self._ref_roles_ahead(pose.xy)
         sets, idx = [goals], None
         if splice:
-            sets.insert(0, (api.Goal.rejoin(self.ref_points),))
-            idx = api.rejoin_candidates(self.ref_points, pose.xy)[0]
+            win = self._ref_window()
+            sets.insert(0, (api.Goal.rejoin(self.ref_points, window=win),))
+            idx = api.rejoin_candidates(self.ref_points, pose.xy, window=win)[0]
         xy = tuple(w(k).pos for k in seq if w(k) is not None)
         return Candidate(name or ">".join(k.value for k in seq), "mission", tuple(seq), tuple(sets), must_land=lands,
                          chain_xy=xy, rejoin_index=idx, follows_reference=splice)

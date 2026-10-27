@@ -35,9 +35,9 @@ class FighterWatch:
     EVADE_ALT_FT, KEEP_MARGIN = 250, 3.0
     COVER_KM, COVER_INSET_KM = 45.0, 4.0
 
-    def __init__(self, terrain_type=None, clutter=None):
+    def __init__(self, terrain_type=None, clutter=None, descend_first=True):
         """terrain_type(x, y) -> 0 mountain .. 3 sea; clutter(x, y) -> territory grid byte (radar clutter)."""
-        self.tt, self.cl = terrain_type, clutter
+        self.tt, self.cl, self.descend_first = terrain_type, clutter, descend_first
         self.specs = {t: rg.aircraft_spec(t) for t in range(12)}
         self.hist, self.alerts, self.state, self.clear_since, self.want, self.mode = {}, {}, "off", None, None, ""
         self.nearest = ""
@@ -100,11 +100,24 @@ class FighterWatch:
             return {}, ev + ["fighter evasion: clear, back to the route"]
         kt = self.EVADE_KT
         ahead = [self._ahead(a, p, self.LOOKAHEAD_S) for _, a in threats]
-        def worst(h, bank=0.0):
-            return max(max(self._margin(a, p, h, kt, alt, opp, bank), self._margin(b, p, h, kt, alt, opp, bank))
+        def worst(h, bank=0.0, a_ft=None):
+            a_ft = alt if a_ft is None else a_ft
+            return max(max(self._margin(a, p, h, kt, a_ft, opp, bank), self._margin(b, p, h, kt, a_ft, opp, bank))
                        for (_, a), b in zip(threats, ahead))
         inside = self.tt is not None and self.tt(*p) == 0
         cur = worst(hdg)
+        # 2026-10-27: going down is cheaper than going around. Seen-margin is altitude dependent (400 -> 800 ft adds
+        # 40-60% EMV): when the present heading is safe at EVADE_ALT_FT, only descend and keep the route (the first
+        # flights' evasions flew minutes off it at 500-700 ft with a margin of -10).
+        if self.descend_first and self.state in ("off", "low") and alt > self.EVADE_ALT_FT + 20:
+            if worst(hdg, 0.0, self.EVADE_ALT_FT) < -self.MARGIN:
+                if self.state == "off":
+                    names = ", ".join(f"{x['name']} {dd:.0f}km" for dd, x in sorted(threats, key=lambda t: t[0])[:3])
+                    if cur >= -self.MARGIN:
+                        ev.append(f"fighter watch ({names}): margin {cur:+.0f} at {alt:.0f} ft, {worst(hdg, 0.0, self.EVADE_ALT_FT):+.0f} at "
+                                  f"{self.EVADE_ALT_FT} - descending, route kept")
+                        self.state, self.mode = "low", "low"
+                if self.state == "low": return self._ov(), ev
         if cur < -self.MARGIN and (self.state == "off" or inside):
             if self.state == "off": return {}, ev                # nothing sees us on this heading: no need to act
         cover = None if inside else self._cover(p)
@@ -132,5 +145,6 @@ class FighterWatch:
         return self._ov(), ev
 
     def _ov(self):
+        if self.state == "low": return dict(fighter="low", alt=self.EVADE_ALT_FT)
         return dict(want=self.want, rate_cap=self.RATE, fighter=self.state, speed_kt=self.EVADE_KT, alt=self.EVADE_ALT_FT)
 
