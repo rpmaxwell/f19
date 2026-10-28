@@ -269,7 +269,7 @@ def test_fighter_watch_descends_before_it_turns():
     for km in range(30, 4, -1):
         fw = FighterWatch(ttype, gbyte)
         p = (15000.0, 20000.0)
-        ac = [dict(slot=3, x=int(p[0] + 64 * km * 0.6), y=int(p[1] - 64 * km * 0.8), alt=4000, type=3, name="MiG-31", flags=0, alert=0)]
+        ac = [dict(slot=3, x=int(p[0] + 64 * km * 0.6), y=int(p[1] - 64 * km * 0.8), alt=4000, type=3, name="MiG-31", flags=0, alert=80)]     # one seen pulse banked: Elite budget spent
         s = dict(alt=700, spd=190, hdg=0.0)
         ov, ev = fw._step(_aircraft_state(s, p, ac, 3), p, 100.0, 0.0, ac, 3)
         if fw.state == "low": found.setdefault("low", (km, ov, ev))
@@ -284,3 +284,43 @@ def test_fighter_watch_margin_per_difficulty():
     fw = FighterWatch()
     assert [fw.margin_for(o) for o in range(4)] == [0.0, 0.0, 0.0, 10.0]
     assert FighterWatch(legacy=True).margin_for(2) == 10.0
+
+
+def _mig(opp, km, alert, alt):
+    """FighterWatch, state, p and one MiG-31 (doppler, 4000 ft) km ahead-right of an F-19 flying north at 190 kt."""
+    gbyte, ttype = H.theater_grid("CE")
+    fw = FighterWatch(ttype, gbyte, descend_first=False); p = (15000.0, 20000.0)
+    ac = [dict(slot=3, x=int(p[0] + 64 * km * 0.6), y=int(p[1] - 64 * km * 0.8), alt=4000, type=3, name="MiG-31", flags=0, alert=alert)]
+    return fw, _aircraft_state(dict(alt=alt, spd=190, hdg=0.0), p, ac, opp), p, ac
+
+
+def _press(opp, km, alert, alt):
+    fw, st, p, ac = _mig(opp, km, alert, alt)
+    return fw._press([(float(km), ac[0])], st, p, opp, fw.margin_for(opp))
+
+
+def test_fighter_watch_alert_budget():
+    """2026-10-27: a fighter that sees us only starts an evasion when its alert on us is running out (Veteran: two seen
+    pulses banked, Elite: one) or when it is inside CLOSE_KM; a fighter that does not see us never does."""
+    # Elite, 700 ft: the MiG-31 is seen from 20 km (margin -4 >= -10) to the close range
+    assert _press(3, 20, 0, 700) is None and _press(3, 20, 80, 700) is not None       # the first sighting is tolerated
+    assert _press(3, 11, 0, 700) is not None                                           # inside CLOSE_KM
+    assert _press(3, 25, 255, 250) is None                                             # margin -20: nothing sees us
+    # Veteran: needs a margin >= 0; scan the altitude at 8 km
+    fw = FighterWatch()
+    alt = next(a for a in range(250, 4000, 50) if fw._margin(_mig(2, 20, 0, a)[3][0], (15000.0, 20000.0), 0.0, 190, a, 2) >= 0)
+    assert _press(2, 20, 0, alt) is None and _press(2, 20, 64, alt) is None           # one or two pulses: fine
+    assert "alert 128" in _press(2, 20, 128, alt)                                      # two banked: act
+    assert _press(2, 20, 255, 250) is None                                             # not seen at 250 ft: left alone
+
+
+def test_fighter_watch_releases_when_the_route_is_safe():
+    """The evasion ends CLEAR_S after the route heading is safe, not when the fighters leave the watch range: a MiG-31
+    seen (Elite, 700 ft, alert 80) starts one; at 250 ft it can't see the route heading, so 15 s later it is over."""
+    fw, st, p, ac = _mig(3, 20, 80, 700)
+    ov, ev = fw._step(st, p, 100.0, 0.0, ac, 3)
+    assert fw.state != "off" and any("alert 80" in e for e in ev)
+    st2 = _aircraft_state(dict(alt=250, spd=190, hdg=0.0), p, ac, 3)
+    fw._step(st2, p, 101.0, 0.0, ac, 3)
+    ov, ev = fw._step(st2, p, 120.0, 0.0, ac, 3)
+    assert fw.state == "off" and any("clear" in e for e in ev)

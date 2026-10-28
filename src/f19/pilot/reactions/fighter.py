@@ -8,9 +8,16 @@ speed: running doesn't work, choosing the aspect does.
 
 Each tick: THREATS = non-friendly aircraft with a radar inside their WATCH range (the IL-76 gets 70 km) or with an
 alert on us. For every candidate heading (FAN_STEP) the margin (return + EMV - 100) of every threat is computed now and
-LOOKAHEAD_S game s ahead; a heading is SAFE when every margin < -MARGIN. Fly the safe heading nearest the goal (a
+LOOKAHEAD_S game s ahead; a heading is SAFE when every margin < -MARGIN (per difficulty, margin_for). Fly the safe heading nearest the goal (a
 mountain cell within COVER_KM if one is safe-ward, else the route), keep the current heading when it is safe, else the
 least-seen heading, at EVADE_KT and EVADE_ALT_FT. Ends after CLEAR_S with no threat.
+
+ALERT BUDGET (2026-10-27, not legacy): a threat only STARTS an evasion when it would see us now (margin on the present
+heading, speed and bank >= -MARGIN) AND the alert it holds on us is running out: a seen pulse adds (war + opp) x 16 + 32
+(Veteran 64, Elite 80) and an alert above 0xC0 is a network alert (scrambles fighters, a visual ID inside 8 km), so it
+acts when alert + gain would leave room for fewer than one more seen pulse (Veteran: two pulses banked, Elite: one), or
+when the fighter is inside CLOSE_KM and would see us. Unseen pulses take 32 off, so a single sighting decays. A running
+evasion ends (after CLEAR_S) as soon as the route heading is safe, instead of waiting for the fighters to leave.
 
 Inputs that were arguments: aircraft = state.aircraft (the AIRCRAFT threats), opp = state.opp (nav passed 2 when it
 had no flight read, i.e. without --auto: a GameState with opp None gives 2), route_want = ctx.want (the heading the
@@ -38,6 +45,7 @@ class FighterWatch:
     # chosen heading is kept while it stays safe (or, with nothing safe, within KEEP_MARGIN of the best).
     EVADE_ALT_FT, KEEP_MARGIN = 250, 3.0
     COVER_KM, COVER_INSET_KM = 45.0, 4.0
+    NET_ALERT, CLOSE_KM = 0xC0, 12.0
 
     def __init__(self, terrain_type=None, clutter=None, descend_first=True, legacy=False):
         """terrain_type(x, y) -> 0 mountain .. 3 sea; clutter(x, y) -> territory grid byte (radar clutter).
@@ -51,6 +59,22 @@ class FighterWatch:
     def wants_control(self, state, ctx): return self.state != "off"
 
     def margin_for(self, opp): return self.MARGIN_ELITE if self.legacy or opp >= 3 else self.MARGIN
+
+    def _press(self, threats, s, p, opp, M):
+        """The threat that starts an evasion (alert budget, see the module docstring): 'MIG-31 7km margin +3 alert 80', or None."""
+        gain = 16 * opp + 32
+        for d, a in sorted(threats, key=lambda t: t[0]):
+            m = self._margin(a, p, s.heading, s.speed_kt, s.alt_ft, opp, s.att.roll)
+            if m >= -M and (d < self.CLOSE_KM or a["alert"] + gain > self.NET_ALERT - gain):
+                return f"{a['name']} {d:.0f}km margin {m:+.0f} alert {a['alert']}"
+        return None
+
+    def _clear(self, now, ev):
+        if self.state == "off": return {}, ev
+        if self.clear_since is None: self.clear_since = now
+        if now - self.clear_since < self.CLEAR_S: return self._ov(), ev
+        self.state, self.clear_since = "off", None
+        return {}, ev + ["fighter evasion: clear, back to the route"]
 
     def _margin(self, a, p, hdg, kt, alt, opp, bank=0.0):
         sp = self.specs.get(a["type"], {})
@@ -99,12 +123,7 @@ class FighterWatch:
             watch = self.IL76_WATCH_KM if a["type"] == 5 else max(self.WATCH_KM_MIN, sp["radar_range"] * 0.3)
             if a["alert"] > 0 or d < watch: threats.append((d, a))
         self.nearest = f"{near[1]['name']} {near[0]:.1f}km a{near[1]['alert']}" if near else ""
-        if not threats:
-            if self.state == "off": return {}, ev
-            if self.clear_since is None: self.clear_since = now
-            if now - self.clear_since < self.CLEAR_S: return self._ov(), ev
-            self.state, self.clear_since = "off", None
-            return {}, ev + ["fighter evasion: clear, back to the route"]
+        if not threats: return self._clear(now, ev)
         kt, M = self.EVADE_KT, self.margin_for(opp)
         ahead = [self._ahead(a, p, self.LOOKAHEAD_S) for _, a in threats]
         def worst(h, bank=0.0, a_ft=None):
@@ -113,6 +132,12 @@ class FighterWatch:
                        for (_, a), b in zip(threats, ahead))
         inside = self.tt is not None and self.tt(*p) == 0
         cur = worst(hdg)
+        press = None
+        if not self.legacy:
+            press = self._press(threats, s, p, opp, M)
+            route_ok = self.state != "off" and route_want is not None and worst(route_want) < -M
+            if press is None and (self.state == "off" or route_ok): return self._clear(now, ev)
+            self.clear_since = None
         # 2026-10-27: going down is cheaper than going around. Seen-margin is altitude dependent (400 -> 800 ft adds
         # 40-60% EMV): when the present heading is safe at EVADE_ALT_FT, only descend and keep the route (the first
         # flights' evasions flew minutes off it at 500-700 ft with a margin of -10).
@@ -120,12 +145,12 @@ class FighterWatch:
             if worst(hdg, 0.0, self.EVADE_ALT_FT) < -M:
                 if self.state == "off":
                     names = ", ".join(f"{x['name']} {dd:.0f}km" for dd, x in sorted(threats, key=lambda t: t[0])[:3])
-                    if cur >= -M:
-                        ev.append(f"fighter watch ({names}): margin {cur:+.0f} at {alt:.0f} ft, {worst(hdg, 0.0, self.EVADE_ALT_FT):+.0f} at "
+                    if cur >= -M or not self.legacy:
+                        ev.append(f"fighter watch ({names}{'; ' + press if press else ''}): margin {cur:+.0f} at {alt:.0f} ft, {worst(hdg, 0.0, self.EVADE_ALT_FT):+.0f} at "
                                   f"{self.EVADE_ALT_FT} - descending, route kept")
                         self.state, self.mode = "low", "low"
                 if self.state == "low": return self._ov(), ev
-        if cur < -M and (self.state == "off" or inside):
+        if self.legacy and cur < -M and (self.state == "off" or inside):
             if self.state == "off": return {}, ev                # nothing sees us on this heading: no need to act
         cover = None if inside else self._cover(p)
         goal = bearing(p, cover[1]) if cover else route_want
@@ -146,7 +171,7 @@ class FighterWatch:
         mode = why.split(" ")[0]
         if self.state == "off" or mode != self.mode:
             names = ", ".join(f"{x['name']} {dd:.0f}km" for dd, x in sorted(threats, key=lambda t: t[0])[:4])
-            ev.append(f"fighter evasion ({names}): {why}, heading {want:.0f}; worst margin now {cur:+.0f}, on the new heading "
+            ev.append(f"fighter evasion ({names}{'; ' + press if press else ''}): {why}, heading {want:.0f}; worst margin now {cur:+.0f}, on the new heading "
                       f"{worst(want):+.0f}")
         self.state, self.mode, self.want = "evade", mode, want
         return self._ov(), ev

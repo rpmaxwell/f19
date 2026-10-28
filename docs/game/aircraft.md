@@ -44,3 +44,17 @@ them in the Gulf). The F-18 has no radar, so treating it as an enemy would chang
   sighting raises a network alert (and scrambles fighters) like any other. Beam it early.
 - With mixed types the answer differs per heading: nav scores every heading against every aircraft.
 - Mountain cells hide you from all of them.
+
+## FighterWatch trigger calibration (2026-10-27)
+
+Established from memlogs (no live test of the new rule yet): at Elite (flight 1793141481 and 5 earlier Elite flights) the computed
+margin (return + EMV - 100, FighterWatch._margin) predicts the game's alert rises: 44 rises, median margin +6, 95 % at >= -5
+(max over the last 3 ticks), one below -10. At Veteran (5 flights, 8 evasions) every evasion fired at a margin of -10..-2 and no
+fighter ever held an alert above 0, no visual ID. So the trigger margin is 10 at Elite and 0 below (`margin_for`), and an
+evasion only starts when the alert budget is running out: alert + gain > 0xC0 - gain, gain = opp x 16 + 32 (Veteran 64: two
+pulses banked; Elite 80: one), or the fighter is inside 12 km and would see us. A running evasion ends 15 s after the route
+heading is safe. Replay (shadow, trajectories as flown): Veteran 8 -> 3 episodes, 14.4 -> 1.4 min.
+Elite flight 1793141481: fighters scrambled by the SA-14 launches at 580 / 594 closed from 36 km straight in; inside 8 km every
+fighter's margin sat in -20..+15 at 250 ft / 170-190 kt, alerts went 0 -> 80 -> 160 -> visual ID within ~40 s. Aspect-based
+evasion can't work once a hunting fighter is that close (2x our speed); the lever is not getting the network alert.
+Untested: the budget rule in a live flight; behavior once the budget is spent (it still evades).
