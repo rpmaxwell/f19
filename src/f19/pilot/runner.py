@@ -36,6 +36,7 @@ from f19.core.geometry import dist, wrap_deg as wrap
 from f19.core.types import Action, Frame
 from f19.core.units import K
 from f19.memory import reader as R
+from f19.pilot.eject import LevelOut
 from f19.rules import radar as rg
 from f19.rules.missiles import parse_missile_world
 from f19.rules.terrain import terrain_ahead_probe  # noqa: F401  (re-exported: the cli imports it from here)
@@ -161,7 +162,7 @@ class Runner:
 
     def __init__(self, reader, controls, arbiter, loops, bus, clock, route_provider, *, ctx=None, reads=None,
                  memlog=None, sleep=time.sleep, side=None, terrain=None, site_names=None, say=print, event_list_s=1.0,
-                 wall=time.time, allow_eject=False):
+                 wall=time.time, allow_eject=True):
         from f19.core.types import FlightContext
         self.reader, self.controls, self.arb, self.loops, self.bus = reader, controls, arbiter, loops, bus
         self.clock, self.routes = clock, route_provider
@@ -281,6 +282,7 @@ class Runner:
         hdg_on = m.hdg
         dec = self.arb.step(state, ctx)
         dec = self._gate_eject(self._direct(state, dec, ctx))
+        dec = self._level_then_eject(dec)
         for e in dec.events: self._event(now, e, events)
         self.controls.apply(dec.command, state, ctx, now)
         for k in dec.key_ups: self.controls.up(k)
@@ -316,14 +318,24 @@ class Runner:
         return dec
 
     def _gate_eject(self, dec):
-        """EJECT (Shift+F10) goes to the game only with allow_eject (fly --allow-eject): the key is untried live and a
-        wrong "no landing" decision would end the mission. Suppressed: the action is dropped, there is no exit (the
+        """EJECT (Shift+F10) goes to the game unless allow_eject is off (fly --no-eject; on by default since the key was
+        tried live 2026-10-29, after _level_then_eject). Suppressed: the action is dropped, there is no exit (the
         flight goes on, the director stays terminal and plans no more), and the mission log and the banner say so."""
         if self.allow_eject or Action.EJECT not in dec.command.actions: return dec
         dec.command = dataclasses.replace(dec.command, actions=tuple(a for a in dec.command.actions if a is not Action.EJECT),
-                                          banner="  DIRECTOR: WOULD EJECT - suppressed (no --allow-eject), still flying", done=None)
+                                          banner="  DIRECTOR: WOULD EJECT - suppressed (--no-eject), still flying", done=None)
         dec.exit = None
-        dec.events.append("EJECT suppressed: --allow-eject not given - still flying")
+        dec.events.append("EJECT suppressed: --no-eject given - still flying")
+        return dec
+
+    def _level_then_eject(self, dec):
+        """A permitted EJECT is not sent as the tick's key: pilot.eject.LevelOut first rolls and pitches the plane level
+        (the death roll is made at the key and a level plane cannot fail it), then presses Shift+F10 on the read after it
+        is confident. Blocks until the key is out (at most LevelOut.MAX_S)."""
+        if Action.EJECT not in dec.command.actions: return dec
+        dec.command = dataclasses.replace(dec.command, actions=tuple(a for a in dec.command.actions if a is not Action.EJECT))
+        res = LevelOut(self.controls, self.reader, self.sleep, self.wall, self.say).run()
+        dec.events.extend(f"EJECT sequence: {line}" for line in res.log)
         return dec
 
     # ----------------------------------------------------------------------------------------------- telemetry

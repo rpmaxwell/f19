@@ -1,4 +1,4 @@
-"""The eject gate: Action.EJECT (Shift+F10, untried live) is dropped unless fly --allow-eject is given. Suppressed, the
+"""The eject gate: Action.EJECT (Shift+F10) goes out by default and is dropped with fly --no-eject. Suppressed, the
 flight goes on (no exit, no scancode), and the mission log and banner say so. All offline: a fake reader and a recording
 emulator, with a route provider whose on_tick hands back the director's eject Order."""
 import dataclasses
@@ -35,13 +35,14 @@ def _runner(argv, order_at):
     return r, emu
 
 
-def test_argument_defaults_off():
-    assert fly.parser().parse_args([]).allow_eject is False
+def test_argument_defaults_on():
+    assert fly.parser().parse_args([]).allow_eject is True
     assert fly.parser().parse_args(["--allow-eject"]).allow_eject is True
+    assert fly.parser().parse_args(["--no-eject"]).allow_eject is False
 
 
-def test_eject_is_suppressed_by_default():
-    r, emu = _runner([], order_at=3)
+def test_eject_is_suppressed_with_no_eject():
+    r, emu = _runner(["--no-eject"], order_at=3)
     assert r.allow_eject is False
     results = [r.tick() for _ in range(8)]
     keys = emu.take()
@@ -54,8 +55,8 @@ def test_eject_is_suppressed_by_default():
     assert results[3].decision.command.banner != results[2].decision.command.banner          # only that tick
 
 
-def test_eject_goes_out_with_allow_eject():
-    r, emu = _runner(["--allow-eject"], order_at=3)
+def test_eject_goes_out_by_default():
+    r, emu = _runner([], order_at=3)
     assert r.allow_eject is True
     results = [r.tick() for _ in range(3)]
     keys = emu.take()
@@ -65,7 +66,7 @@ def test_eject_goes_out_with_allow_eject():
 
 
 def test_gate_leaves_other_actions_and_commands_alone():
-    r, _ = _runner([], order_at=10 ** 6)
+    r, _ = _runner(["--no-eject"], order_at=10 ** 6)
     from f19.pilot.arbiter import Decision
     cmd = Command(actions=(Action.FLARE, Action.EJECT, Action.CHAFF), heading=40.0, done=True)
     dec = Decision(command=cmd, overrides=Command(), want=40.0, route_want=40.0, phase="route", behavior="director",

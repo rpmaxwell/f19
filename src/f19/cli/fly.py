@@ -158,7 +158,7 @@ def build(args, reader, emulator, clock, s0, *, sleep=time.sleep, wall=time.time
         ctx.route = provider.current()
     return Runner(reader, controls, arb, loops, bus, clock, provider, ctx=ctx, reads=reads, memlog=memlog,
                   sleep=sleep, side=side, terrain=probe, site_names=site_names, say=say, wall=wall,
-                  allow_eject=bool(getattr(args, "allow_eject", False)))
+                  allow_eject=bool(getattr(args, "allow_eject", True)))
 
 
 def director_for(args, route, rd, mm, dry):
@@ -385,9 +385,11 @@ def parser():
     ap.add_argument("--strafe", help="gun attack on radar sites now: record numbers, comma-separated, or 'nearest'")
     ap.add_argument("--missile-watch", choices=("act", "observe", "off"), help="enemy-missile evasion (default act at Elite)")
     ap.add_argument("--director", action="store_true", help="replan with the FlightDirector after deviations (WP-7c; needs --route)")
-    ap.add_argument("--allow-eject", action="store_true",
-                    help="let the director eject (Shift+F10) when it decides to bail out; without it the eject is suppressed, "
-                         "logged, and the plane keeps flying (the key is untried live)")
+    ap.add_argument("--allow-eject", dest="allow_eject", action="store_true", default=True,
+                    help="(default, kept for old command lines) the director may eject (Shift+F10) when it decides to bail out; "
+                         "the plane is levelled first (pilot/eject.py)")
+    ap.add_argument("--no-eject", dest="allow_eject", action="store_false",
+                    help="suppress the eject: it is logged and the plane keeps flying (the director then plans no more)")
     ap.add_argument("--plain", action="store_true", help="no HUD")
     ap.add_argument("--no-keys", action="store_true", help="LIVE, READ-ONLY: read the game and run the whole pilot, but Controls "
                     "talks to a recorder - no key is sent; the would-be key stream is written to logs/nav/<id>.keys.txt")

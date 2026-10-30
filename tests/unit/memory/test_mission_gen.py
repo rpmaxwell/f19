@@ -64,11 +64,13 @@ def test_generator_matches_legacy_and_finds_seeds(img):
     import mission_finder_legacy as L
     mem = img.read_bytes()
     new, old = G.Generator(mem), L.Generator(mem)
-    assert G.decode(mem, new.ds_phys) == L.decode(mem, old.ds_phys)
+    def legacy(m):                      # the frozen copy predates the targets' x, y and sa14 (the SA-14 cell filter)
+        return {**m, **{r: {k: v for k, v in m[r].items() if k not in ("x", "y", "sa14")} for r in ("primary", "secondary")}}
+    assert legacy(G.decode(mem, new.ds_phys)) == L.decode(mem, old.ds_phys)
     seq_new = [new.generate() for _ in range(3)]
-    assert seq_new == [old.generate() for _ in range(3)]
+    assert [legacy(m) for m in seq_new] == [old.generate() for _ in range(3)]
     spec = G.Spec("x10+")
-    assert G.predict(new, spec, 5)[1][:1] == L.predict(old, L.Spec("x10+"), 5)[1][:1]
+    assert [legacy(m) for m in G.predict(new, spec, 5)[1][:1]] == L.predict(old, L.Spec("x10+"), 5)[1][:1]
     assert G.survey(new, spec, 20)[:2] == L.survey(old, L.Spec("x10+"), 20)[:2]
     seed, m = G.find_seed(spec, new, tries=200)
     assert spec.match(m) and new.from_seed(seed) == m                       # reproducible

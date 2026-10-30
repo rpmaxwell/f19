@@ -757,7 +757,11 @@ class Landing:
         if self.state == "rollout":
             out.update(alt_hold=False, roll_hold=False)
             set_toggle(db, f, BRAKES, True, "0")
-            if s["spd"] <= 1: self.state = "stopped"; out["done"] = True
+            if s["spd"] <= 1: 
+                self.state = "stopped"
+                time.sleep(2)
+                out["done"] = True
+
         if self.state == "go-around":
             out.update(alt=500, vs_max=10.0); set_toggle(db, f, GEAR_UP, True, "6")
             if s["alt"] > 400: out["done"] = True

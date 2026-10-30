@@ -34,6 +34,14 @@ class Attack:
     MAV_MIN_KM, MAV_MAX_KM, MAV_SPEC = 6.0, 14.0, 0x1B
     B_MAX = 40                                         # B presses before the lock is left to the pilot
     PHOTO_BAY_KM, BAY_RETRY_S = 3.0, 1.5               # open the bay this far before the photo point; re-press every
+    CONFIRM_PHOTO = True                               # keep taking frames until the event log shows the target photographed
+    FRAME_RETRY_S = 1.0                                # photo: one more Enter this often until the event log shows the target photographed
+    # Pull-up over the target (2026-10-29: Kolobrzeg and Katowice flew into the Tank Farm at 247-251 ft, 0.11-0.12 km out, END
+    # "flying into that hill" = code 2, a solid hit while airborne; Liberec cleared one at 314 ft). Inside CLEAR_KM the photo run
+    # ends whether or not the event log has shown the photo, and the plane climbs CLEAR_UP_FT over its run-in altitude until it is
+    # CLEAR_PAST_KM past the target. CLEAR_PASS False = scripts/phases.py (the equivalence tests pin it).
+    CLEAR_PASS = True
+    CLEAR_KM, CLEAR_PAST_KM, CLEAR_UP_FT, CLEAR_VS = 1.0, 1.2, 150, 40.0
     # Elite halves the photo window (budget (8 - 2 opp) x 64 = 128). Its camera error is |look-down - pitch + 9.74|,
     # and clean at 190 kt the nose sits ~6.4 deg up: at 250 ft NO range fits the Elite window (Veteran: 0.4-2.8 km).
     # Flaps cut the level pitch to ~3.8 deg -> window 0.7-1.3 km (photo_score; untested in flight). So at Elite the
@@ -44,7 +52,8 @@ class Attack:
         self.role, self.mode, self.T, self.record = role, mode, target, record
         self.launch_km, self.photo_km = launch_km, photo_km
         self.state, self.next_ok, self.b_presses, self.shots, self.log = "prep", 0.0, 0, 0, []
-        self.before = None; self.space_presses = self.f2_presses = 0; self.events0 = None; self.cam_on = False
+        self.before = None; self.space_presses = self.f2_presses = 0; self.events0 = None; self.cam_on = False; self.photographed = False
+        self.away_logged, self.near, self.clear_alt = False, math.inf, None      # closest approach (km); the pull-up altitude, set when it starts
         self.seen4 = 0; self.slot = self.gone = None
         self.key = ""                                  # the key asked for this step (nav's attack_key column)
         self.bay_presses = 0
@@ -70,8 +79,22 @@ class Attack:
     def step(self, state, ctx):
         n_log = len(self.log); acts = []; self.key = ""
         out = self._step(state, ctx, acts)
+        if self.CLEAR_PASS and self.mode == "photo": self._clear(state, out)
         if out.get("done"): self.done = True
         return command_of(out, self.log[n_log:], acts)
+
+    def _clear(self, state, out):
+        """Photo run: hold the plane until it is CLEAR_PAST_KM past the target, and climb over it inside CLEAR_KM."""
+        if self.state not in ("photo", "close", "away"): return
+        d = game_dist(state.xy, self.T) / K
+        self.near = min(self.near, d)
+        if self.near < self.CLEAR_KM and d > self.CLEAR_PAST_KM and d > self.near: return    # past it: let go
+        if out.pop("done", None): out["want"] = bearing(state.xy, self.T)                      # photographed early: stay on the run
+        if self.near < self.CLEAR_KM:
+            if self.clear_alt is None:
+                self.clear_alt = state.alt_ft + self.CLEAR_UP_FT
+                self.log.append(f"pull-up over the target at {d:.2f} km: {state.alt_ft:.0f} -> {self.clear_alt:.0f} ft")
+            out.update(alt=self.clear_alt, vs_max=self.CLEAR_VS)
 
     def _step(self, state, ctx, acts):
         now, sy, p, ts = ctx.now(), state.systems, state.xy, state.ts
@@ -149,6 +172,10 @@ class Attack:
             acts.append(Action.FIRE); self.tries += 1; self.next_ok = now + 2.0   # let the count drop: a 2nd Enter = a 2nd Maverick
             return out
         if self.state == "photo":
+            if self.CLEAR_PASS and d < self.CLEAR_KM:                  # out of room: end the run photographed or not, _clear pulls up
+                self.log.append(f"photo run ended at {d:.2f} km after {self.shots} frame(s): " +
+                                ("photographed" if self.photographed else "no photographed event yet"))
+                self.state = "close"; return out
             score, budget = self.photo_score(state, p)
             out["banner"] += f"   photo score {score:.0f} / {budget}"
             # ONE frame well inside the window, then the bay shuts at once: an open bay is a radar beacon,
@@ -164,21 +191,30 @@ class Attack:
                 if d < 0.1 or (score >= budget and d < self.photo_km):
                     self.log.append(f"bay never opened ({self.bay_presses} presses of 8): no frame"); self.state = "close"
                 return out
-            # the frame needs score < budget; 0.8 x budget was never reached at 700 ft (the look-down term alone is ~7 deg:
-            # best 207 vs 205, first --auto flight 2026-10-27, no frame). Fire from budget - 20 (the score then falls on
-            # for a second or two, the key lags ~0.3 s).
-            if score < min(0.92 * budget, budget - 20) and self.shots == 0:
-                acts.append(Action.FIRE); self.shots += 1; self.next_ok = now + 1.0; self.key = "enter"
-                self.log.append(f"camera fired at {d:.2f} km, score {score:.0f}/{budget}, bay open"); self.state = "close"
+            # the frame needs score < budget. Fire from budget - 20 (the score then falls on for a second or two, the key
+            # lags ~0.3 s) and KEEP FIRING, one Enter per FRAME_RETRY_S, until the event log says "photographed": film is
+            # free and a few more seconds with the bay open cost less than missing the primary (2026-10-28 Prague: one frame
+            # at score 235, not photographed, the bay shut and the attack was over; two such misses at 227 / 235 against six
+            # frames at <= 216 that all counted).
+            # CONFIRM_PHOTO False is the single-frame behaviour of scripts/phases.py (the equivalence tests pin it).
+            if self.CONFIRM_PHOTO and any(e[0] == 10 and e[2] == self.record for e in events[self.events0 or 0:]):
+                self.log.append(f"Target photographed after {self.shots} frame(s) (event log)"); self.photographed = True; self.state = "close"
+                return out
+            if score < min(0.92 * budget, budget - 20) and (self.shots == 0 or (self.CONFIRM_PHOTO and now >= self.next_ok)):
+                acts.append(Action.FIRE); self.shots += 1; self.next_ok = now + (self.FRAME_RETRY_S if self.CONFIRM_PHOTO else 1.0); self.key = "enter"
+                self.log.append(f"camera fired at {d:.2f} km, score {score:.0f}/{budget}, bay open" if self.shots == 1 else
+                                f"camera frame {self.shots} at {d:.2f} km, score {score:.0f}/{budget}, not photographed yet")
+                if not self.CONFIRM_PHOTO: self.state = "close"
             elif d < 0.1:                                              # overflown without a frame
-                self.log.append("photo point passed without a frame"); self.state = "close"
+                self.log.append("photo point passed without a frame" if not self.shots else f"photo point passed after {self.shots} frame(s), not photographed")
+                self.state = "close"
             return out
         if self.state == "close":                                      # keep at it until the flag says shut
             if not want_toggle(acts, state, Action.BAY_TOGGLE, False) and self.flaps_set and sy.flags & FLAPS:
                 want_toggle(acts, state, Action.FLAPS_TOGGLE, False); return out    # Elite photo: flaps back up first
             if not want_toggle(acts, state, Action.BAY_TOGGLE, False):
                 if self.mode == "photo":
-                    ok = [e for e in events[self.events0 or 0:] if e[0] == 10 and e[2] == self.record]
+                    ok = self.photographed or any(e[0] == 10 and e[2] == self.record for e in events[self.events0 or 0:])
                     self.log.append("Target photographed (event log)" if ok else "no photographed event in the log yet")
                     self.state = "away"
                 else:
@@ -212,7 +248,8 @@ class Attack:
             want_toggle(acts, state, Action.BAY_TOGGLE, False); return out
         if self.state == "away":
             dead = self._record(state)[2] if self.record is not None else None
-            if dead is not None: self.log.append(f"target record {self.record} destroyed flag: {dead}")
+            if dead is not None and not self.away_logged:
+                self.log.append(f"target record {self.record} destroyed flag: {dead}"); self.away_logged = True
             out["done"] = True; out.pop("want")
         return out
 

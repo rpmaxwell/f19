@@ -152,3 +152,23 @@ def test_f19_state_shim_reexports():
     import f19_state as S
     assert S._offset is R._offset and S.read_state is R.read_state and S.AIRCRAFT == S.SIMOBJ
     assert S.read_missile_world.__module__ == "f19_state"
+
+
+def test_find_events_retries_a_miss(monkeypatch):
+    """2026-10-29: a miss was cached for good, so a first read on the runway (list still empty) made read_events return []
+    all flight and the photographed record (type 10) was never seen. A miss is now retried every EVENT_RETRY_S."""
+    lo, hi = R.A.EVENT_SCAN_LO, R.A.EVENT_SCAN_HI
+    mem = bytearray(hi - lo)
+    monkeypatch.setattr(R, "_peek_many", lambda db, reqs: [bytes(mem[a - lo:a - lo + n]) for a, n in reqs])
+    clock = [100.0]; monkeypatch.setattr(R.time, "monotonic", lambda: clock[0])
+    db = object(); R._events.pop(id(db), None)
+    assert R.find_events(db) is None and R.read_events(db) == []
+    rec = bytes.fromhex("08002000" "1e44" "09004000" "1f40") + bytes.fromhex("0a80" "0100")[:0]
+    mem[0x1234:0x1234 + len(rec)] = rec
+    mem[0x1234 + 12:0x1234 + 18] = bytes.fromhex("8a01e005" "8181")        # type 10 | primary, target 1, t=1504
+    clock[0] += 1.0
+    assert R.find_events(db) is None                                           # inside the retry window: not rescanned
+    clock[0] += R.EVENT_RETRY_S
+    assert R.find_events(db) == lo + 0x1234
+    assert (10, 0x80, 1, 1504) in R.read_events(db)
+    R._events.pop(id(db), None)

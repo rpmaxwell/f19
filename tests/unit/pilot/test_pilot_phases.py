@@ -8,6 +8,7 @@ import pytest
 
 from pilot_equiv import apply_keys, move, pos, product, projectile, run_phase, world
 from f19.pilot.phases import Attack, GunAttack, Landing, Takeoff
+from f19.pilot.phases._common import K, game_dist
 
 T0, DT = 1_800_000_000.0, 0.25
 ph = product.phases()
@@ -263,3 +264,50 @@ def test_photo_run_at_700_ft_has_a_firing_point():
     budget = score(100)[1]
     assert budget == 256 and best > 0.75 * budget                       # the 0.8 trigger had ~no margin (207 vs 205 in the flight)
     assert best < min(0.92 * budget, budget - 20)                       # the new one can
+
+
+def test_photo_retries_until_photographed(egame, monkeypatch):
+    """2026-10-28 Prague: one frame was taken, the game did not count it, the bay shut and the primary was lost. Now Enter is
+    pressed every FRAME_RETRY_S until the event log shows the target photographed, and the bay stays open meanwhile."""
+    monkeypatch.setattr(Attack, "CONFIRM_PHOTO", True)
+    from pilot_equiv import FakeControls, FlightContext, ManualClock, gamestate, new_ov
+
+    def fly(photo_event):
+        w, after = attack_world("photo", photo_event=photo_event, alt=250)
+        a = Attack("primary", "photo", TGT, T_REC, None, 2.0)
+        ctx = FlightContext(ManualClock(0.0)); ctrl = FakeControls(ctx); enters = 0
+        for t, w_ in ticks(w, 4000):
+            ctx.clock.set(t); st = gamestate(w_); cmd = a.step(st, ctx); keys = ctrl.apply(cmd, st, t)
+            enters += sum(1 for k in keys if k[:2] == ("tap", "enter"))
+            after(w_, keys, t, new_ov(cmd))
+            if a.done: break
+        return a, enters
+    a, enters = fly(photo_event=False)               # the game never counts a frame: keep clicking until the photo point is passed
+    assert enters >= 3 and a.done, (enters, a.log)
+    assert any("not photographed" in l for l in a.log) and not a.photographed
+    a, enters = fly(photo_event=True)                # counted at once: one frame, then the bay shuts
+    assert enters == 1 and a.photographed and any("photographed after 1 frame" in l for l in a.log), (enters, a.log)
+
+
+@pytest.mark.parametrize("photo_event", [True, False])
+def test_photo_run_pulls_up_over_the_target(egame, monkeypatch, photo_event):
+    """2026-10-29 Kolobrzeg / Katowice: the run flew on at 250 ft into the Tank Farm (END: 'flying into that hill'). Inside
+    CLEAR_KM the run ends photographed or not, the plane is told to climb CLEAR_UP_FT, and Attack keeps control until it is
+    CLEAR_PAST_KM past the target."""
+    monkeypatch.setattr(Attack, "CONFIRM_PHOTO", True); monkeypatch.setattr(Attack, "CLEAR_PASS", True)
+    from pilot_equiv import FakeControls, FlightContext, ManualClock, gamestate, new_ov
+
+    w, after = attack_world("photo", photo_event=photo_event, alt=250)
+    a = Attack("primary", "photo", TGT, T_REC, None, 2.0)
+    ctx = FlightContext(ManualClock(0.0)); ctrl = FakeControls(ctx); climbs = []; done_km = None
+    for t, w_ in ticks(w, 4000):
+        ctx.clock.set(t); st = gamestate(w_); cmd = a.step(st, ctx); keys = ctrl.apply(cmd, st, t)
+        km = game_dist(st.xy, TGT) / K
+        if cmd.alt is not None: climbs.append((km, cmd.alt))
+        after(w_, keys, t, new_ov(cmd))
+        if a.done: done_km = km; break
+    assert climbs and all(km < Attack.CLEAR_KM + 0.3 for km, _ in climbs[:1]), climbs[:3]
+    assert {alt for _, alt in climbs} == {250 + Attack.CLEAR_UP_FT}
+    assert done_km is not None and done_km >= Attack.CLEAR_PAST_KM, done_km     # held until past the target
+    assert any(l.startswith("pull-up over the target") for l in a.log)
+    assert a.photographed == photo_event

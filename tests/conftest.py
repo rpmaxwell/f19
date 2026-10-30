@@ -54,3 +54,13 @@ def egame():
 @pytest.fixture(scope="session")
 def update_baseline(request):
     return request.config.getoption("--update-baseline")
+
+
+@pytest.fixture(autouse=True)
+def single_frame_photo(monkeypatch):
+    """The pilot equivalence tests compare Attack with scripts/phases.py, which takes one photo frame; the keep-going-until-
+    photographed behaviour (Attack.CONFIRM_PHOTO) has its own test (test_photo_retries_until_photographed), and so has the
+    pull-up over the target (Attack.CLEAR_PASS, test_photo_run_pulls_up_over_the_target)."""
+    try: from f19.pilot.phases.attack import Attack
+    except ImportError: return
+    monkeypatch.setattr(Attack, "CONFIRM_PHOTO", False); monkeypatch.setattr(Attack, "CLEAR_PASS", False)
