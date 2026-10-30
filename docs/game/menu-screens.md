@@ -13,3 +13,12 @@ Difficulty not recorded; not expected to matter.
 - ~15 s later the EGAME reads went to garbage (alt 2053, spd 2313, frame 1288): EGAME's data segment was replaced,
   presumably by END (the debrief). `f19.cli.fly`'s "not in flight" rule (speed > 900) fires on exactly this.
 - Untested: whether `enter` alone also un-freezes it; the bailout and crash end states; what END shows or expects.
+
+## END screens (2026-10-30)
+Conventional memory (0-0xA0000) dumped via `emu.read`, to `F19_DATA/dumps/menu/` (not in the repo):
+- `safe_landing.bin`: END's "safe landing" screen (pilot smiling in the cockpit), reached after `space` (above).
+- `summary.bin`: 2 s after one `enter` tap on that screen: the mission summary screen (score, "failed to accomplish his objectives"; user-confirmed). `enter` there opens the debrief map screen, which has an "exit debrief" option that returns to the roster page (per the user; not yet walked).
+  82,179 bytes differ from `safe_landing.bin`. Variables that distinguish the two are not yet extracted.
+- `debrief_map.bin`: 2 s after one `enter` on the summary screen: the debrief map screen (flight summary map with an
+  "exit debrief" option). Not yet user-confirmed. Per the user, the cursor may need `down` before `enter` selects
+  "exit debrief" (returns to the roster page); not yet tried.

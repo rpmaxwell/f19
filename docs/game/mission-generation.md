@@ -50,7 +50,7 @@ How START generates a mission (targets, bases, mission numbers, deadlines, fuel 
   0x38: u16 name_id (1-based into the NUL-separated name list; one entry is
   empty), X, Y (waypoint-table units, 64/km), kind, 3 x u16 flags, u16 class
   (294 SAM site, 309 ship slot, 324 OTH radar, 277 search radar, 318 city,
-  286 tank farm). Parser: `analysis/parse_theater.py` -> logs/theater/CE.json.
+  286 tank farm). Parser: `python -m f19.gamedata.wld` -> logs/theater/CE.json.
   All 16 named SAM sites match briefing positions (within the ~5 km bias of my
   briefing-map fit).
 - The game's **resident launcher** (low memory; chains SU/START/missions/EGAME/END)

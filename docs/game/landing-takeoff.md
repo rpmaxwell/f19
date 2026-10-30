@@ -4,7 +4,7 @@ Takeoff direction and the landing and takeoff rules (EGAME). Moved verbatim from
 
 ## Takeoff direction: decided by the theater alone — decoded from EGAME.EXE (2026-10-17)
 
-EGAME flight init at image 0x1FC1 (after `unexepack.py`; ds offsets are EGAME DGROUP = image 0x1ecf0):
+EGAME flight init at image 0x1FC1 (after `python -m f19.gamedata.exe`; ds offsets are EGAME DGROUP = image 0x1ecf0):
 ```
 les bx,[6640]            ; far ptr to the pilot record (same fields as START's ds:991C one): +0x38 theater, +0x3A level
 test byte es:[bx+38],1 ; ax = 0

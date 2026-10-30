@@ -48,7 +48,7 @@ Ramstein -> Rhein-Main). `scripts/read_mission.py` decodes it (output e.g.
   in NC, OTH Radar is 4 in CE).
 - **BRIEFING.TXT** is MicroProse LZW: byte 0 = max code width (11), codes LSB-first from 9 bits, first
   free code 257, dictionary reset when full. It holds 56 NUL-separated texts, and text n = mission n.
-  `analysis/mission_catalog.py` decodes it and writes **[MISSIONS.md](missions.md)** (every mission, its text and
+  `python -m f19.gamedata.missions` decodes it and writes **[MISSIONS.md](missions.md)** (every mission, its text and
   possible theaters). Theater bit order: 0 Libya, 1 Gulf, 2 North Cape, 3 CE (checked against the texts).
 
 - nav.py's "route belongs to this mission" check now compares the `slots` (still in memory in flight)
@@ -298,7 +298,7 @@ for that part.
   25 % roll: range didn't cause it. The 6-15.5 km window stays only to follow the game's in-range cue.
 - **Where the 20 km came from:** not the file parsing (that gave lock 28 km / in-range 16 km, correctly). The 16-20 km window
   in [notes/targeting_for_planner.md](../design/targeting_for_planner.md) was built from the remark "the user fires at ~20 km" and the pop-up model (fire early,
-  turn away). The wrong part that came from parsing was the release_geometry.py sink model, which said a level shot below
+  turn away). The wrong part that came from parsing was the release-geometry sink model (now f19.rules.weapons), which said a level shot below
   200 ft sinks 300-650 ft into the ground and so produced the pop-up.
 - **CORRECTION: event type 4 = weapon launched at a target, not "Ineffective"** (2026-10-18). Two Maverick launches at 18.8 and
   16.9 km logged `(4, 0, 2, 3187)` and `(4, 0, 2, 3200)` within seconds of each launch; the earlier `(4, 0, 2, 2592)` was also the

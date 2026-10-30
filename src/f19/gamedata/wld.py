@@ -119,7 +119,7 @@ def category_table(b):
 
 
 def categories(th):
-    """{name id: (name, category byte)} of the theater's capitalised names (analysis/ordnance.categories)."""
+    """{name id: (name, category byte)} of the theater's capitalised names (f19.gamedata.wld.categories)."""
     names, cat = category_table(wld_bytes(th))
     return {k: (names[k - 1], cat[k]) for k in range(1, 100) if k <= len(names) and names[k - 1] and not names[k - 1][0].islower()}
 
@@ -132,3 +132,15 @@ def objects_by_category(th):
     for k, c in enumerate(cat):
         if c and k < len(names) and names[k] not in cats.get(c, []): cats.setdefault(c, []).append(names[k])
     return cats
+
+
+def main(argv):
+    """parse-theater: write logs/theater/<code>.json for the given theaters (default: all four)."""
+    for th in [code(a) for a in argv] or list(WLD_FILE):
+        d = write_places(th)
+        print(f"{th}: {len(d['records'])} records, {len(d['names'])} names -> {places_path(th)}")
+
+
+if __name__ == "__main__":
+    import sys
+    main(sys.argv[1:])

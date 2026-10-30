@@ -57,7 +57,7 @@ class Systems:
     flags: int = 0                       # ds:684C, bits above
     throttle: int | None = None          # percent
     station: int | None = None           # selected weapon station 0-3
-    loadout: tuple = ()                  # 4 x (weapon index, count), weapon indices as analysis/ordnance.py
+    loadout: tuple = ()                  # 4 x (weapon index, count), weapon indices as `python -m f19.rules.weapons`
     fuel_lb: int | None = None           # ds:4ED0
     gun_rounds: int | None = None
     flares: int | None = None            # ds:4ED4 stores

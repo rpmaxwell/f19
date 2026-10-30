@@ -1,4 +1,4 @@
-"""core.theater against analysis/theaters.py, planner/plan.py, read_mission.py, terrain_3d.py, territory.py, score.py."""
+"""core.theater against gamedata.wld / terrain, planner.planner, rules.scoring and scripts/read_mission.py."""
 import pytest
 
 from core_legacy import extract

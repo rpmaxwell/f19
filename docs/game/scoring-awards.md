@@ -4,7 +4,7 @@ The mission rating formula and the medal, ribbon and promotion rules, decoded fr
 
 ## Mission rating formula — decoded from END.EXE (2026-10-17)
 
-END.EXE is EXEPACK'd: `analysis/unexepack.py END.EXE END.bin` (DGROUP = seg 0x9d9). Score routine at
+END.EXE is EXEPACK'd: ``python -m f19.gamedata.exe` END.EXE END.bin` (DGROUP = seg 0x9d9). Score routine at
 image 0x5666 (`analysis/end_re/score_real.asm`; Ghidra project analysis/end_re). gameData = far ptr [0x86ae],
 commData = far ptr [0x9ed6]. Tables are int16 in DGROUP; "/8" steps are integer (truncating) long math.
 

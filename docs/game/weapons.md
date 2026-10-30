@@ -4,8 +4,8 @@ Ordnance vs target strength, weapon release and blast damage, photo/lock/guidanc
 
 ## Ordnance vs target strength — decoded from EGAME.EXE (2026-10-17)
 
-`analysis/ordnance.py` prints all of this from the game files. EGAME DGROUP = image 0x1ecf0 after
-`unexepack.py` (START has the same tables at its own DS).
+`python -m f19.rules.weapons` prints all of this from the game files. EGAME DGROUP = image 0x1ecf0 after
+`python -m f19.gamedata.exe` (START has the same tables at its own DS).
 - **Missile/bomb specs** (18 B: name[8], u16 range?, speed?, mode, agility?, flags?), indexed by `spec`:
   0x16 AIM120, 0x17 AIM-9, 0x18 HARM, 0x19 Penguin, 0x1a Harpoon, 0x1b AGM-65, **0x1c LGBOMB, 0x1d RTBOMB,
   0x1e FFBOMB** (laser-guided / retarded / free-fall), plus the enemy SA-x/AA-x entries.
@@ -80,7 +80,7 @@ Planner-facing summary: [notes/targeting_for_planner.md](../design/targeting_for
   the target line, so missiles loft.
 - **Airspeed** kt = ds:7F94 / 27 (ds:855A). Missile start speed = ds:7F94 >> 11 = kt/76.
 - **Frame scale** ds:4EFC = (measured frame value + 2)/4, clamped [4 - accel, 15]; halved in time acceleration.
-- analysis/release_geometry.py simulates the low-altitude Maverick sink and the photo windows from these rules.
+- `python -m f19.rules.weapons release` simulates the low-altitude Maverick sink and the photo windows from these rules.
 
 ## Guns — EGAME (2026-10-18, from the disassembly; not yet seen in flight)
 
