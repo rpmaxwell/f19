@@ -244,6 +244,7 @@ for that part.
   u16 at ~0x54106 read 80 = the record count (one sample; unconfirmed).
 - **Trackcam mode = u8 old phys 0x455A6**, F2 cycles it 2 -> 0 -> 1 -> 2. With the user's order nav -> air-to-ground ->
   air-to-air and the user's air-to-ground as the starting 2: **1 nav, 2 air-to-ground, 0 air-to-air** (inferred, check on the HUD).
+- **CORRECTION (2026-10-30):** the N and B descriptions below are observations; the decoded rules are in "Trackcam target selection: N, B, \"/\"" further down (N snaps to the 3D object under the nose line, not the nearest on-screen one; B steps outward by distance inside a +-45 deg cone).
 - **N (designate new target)** locked nothing in any mode while Mittenwalde was 25-40 deg off the nose at 33-40 km. With the
   target off screen the lock read 0 for an object 11 km dead ahead: **record 0 = the scratch slot for a generic 3D object**
   (the "other items" the user mentions). `scripts/acquire_target.py RECORD` keeps the trackcam in air-to-ground and presses N
@@ -420,6 +421,39 @@ for that part.
   level-off = min(220, cruise - 100), handover = min(300, cruise - 30), cruise power once the gear is up; descents below 700 ft
   at most 8 ft/s; pitch-tap gap scaled by airspeed/200 kt; predictive floor guard (alt + 5 s x vs < floor), off when a phase
   sets its own floor (landing). Not yet flown.
+
+## Trackcam target selection: N, B, "/" — EGAME disassembly + memlog replay (2026-10-30)
+
+How it was established: EGAME disassembly (key switch 0xd3a6, selection 0xab84-0xacbc, N 0xb858-0xb8f6, distance 0xc954/0xc994/0xd11b,
+scene snap 0xc892) and the decoded B rule replayed against memlog snapshots of three flights (1793126949, 1792724414, 1793382037).
+None of it depends on the difficulty (the only variable is night, ds:4EF4 = 0 in all three); every flight here was day. Untested live: a B probe.
+
+- **State:** ds:5526 = locked ground target (record index; -1 = none; **bit 0x80 set = a search is pending**, so -1 is itself "searching"),
+  ds:9A36 = trackcam mode (F2: 0 -> 1 -> 2 -> 0; 2 = air-to-ground), ds:9E8C = view offset (0 ahead, 0x4000/0x8000/0xC000 = the other
+  views), ds:9740 = screen id (0x13 / 0x19 = trackcam screens), ds:9500 = record count searched (75, all world records; ds:9C78 is only the
+  "enemy" subset), ds:8B22 = 4-frame retry cooldown, ds:4EF4 = night.
+- **"/" (0x352f)** = view ahead (9E8C = 0), **clears the lock to -1** (unless the screen is 0x19), switches to screen 0x13. Because -1 means
+  "searching", the next frame auto-acquires the **nearest** record in the cone. It is the "start the cycle over" key.
+- **B (0x3062)** only sets bit 0x80 on ds:5526 (and 5524). The pick runs in the per-frame trackcam code at 0xab84. It does nothing unless:
+  ds:9740 is 0x13 or 0x19, mode != 1, ds:94E0 bit 0x80 clear, cooldown 8B22 = 0. Then, over records 0..9499:
+  **candidate = not destroyed (+8 bit 0x80), octagonal dist >= dist(current lock), within +-45 deg (0x2000) of heading + view, dist < 100 << (6 - night)
+  units (6400 = 100 km day, 50 km night), and in modes 0/1 only enemy-side (+8 bit 0x01); mode 2 takes friendlies too. It takes the NEAREST
+  candidate.** If the current lock is -1 or itself outside the cone the floor is 0 (nearest of all). If there is none, the lock goes to -1 and the
+  next frame re-acquires the nearest, so B **wraps** (no wasted press).
+  So B only ever steps **outward** by distance through the **+-45 deg cone**; it never leaves the cone, and the set it walks is every record in the
+  cone, friendlies and the scratch record 0 (stale X,Y) included. 75 records means a lap can exceed Attack.B_MAX (40).
+- **N (0x316e)** is not "nearest on screen": it toggles ds:684C bit 0x100, which makes the frame code project the nose line to the ground
+  (alt / tan(-pitch) ahead, 640 units if the nose is level or up) and call 0xc892, which snaps to the 3D scene object at that point (0x11080, undecoded)
+  and takes the record **only if that object's X,Y equal a record's X,Y exactly**; otherwise it fills scratch record 0 and locks 0. A radar site is
+  several scene objects, so the nose point near a site usually snaps to a site object, not the neighbouring target: that is why N "locks the SAM".
+- **Replay checks (day):** 1793126949: at prep only record 44 is inside the cone and the wanted record 2 (11.6 km) is 97-126 deg off the nose, so
+  B reads 44 -> -1 -> 44 for 40 presses. 1792724414: wanted 19 at 65-150 deg; the in-cone set 2, 6, 34, 16, 38 is exactly the observed cycle
+  (6, 34, 16, 38, 2, ...). 1793382037 attack 1: ds:9740 = 0 for the whole run (the "/" never took), lock -1 for 40 presses.
+  Nav logs without a memlog fit the same rule: 51 <-> 4 and "47 x24" are a cone holding one or two records.
+- **Not explained:** 1793382037 attack 2 (secondary, record 1): the "/" took (9740 = 0x13), lock = 7 (the SA-14 site, 528 units), and
+  the wanted record 1 (848 units, 1 deg off the nose, flags 0, in the cone) was never selected in 40 presses. The decoded rule predicts 7 -> 1.
+  Only difference found vs the cycling flight: ds:4EEA (weapon station) = 1 (camera) instead of 0. Needs a live probe (peek 5526 / 4EEA around one B).
+
 
 ## Flight-log variables: fuel, damage, clock, IDs, threats — EGAME (2026-10-18)
 

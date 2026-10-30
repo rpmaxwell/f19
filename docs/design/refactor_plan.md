@@ -518,3 +518,12 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   fixtures: 2.1-2.6). Replay key streams of all three fixtures are byte-identical to before; only the event files gain clock lines.
   Still to decide, with live data: feed the measured ratio in as `ts`, or move every timer to game seconds.
 - Left: live flights (checklist a-h), then retiring the shims/legacy references.
+
+## Live flight 2026-10-30 (ce_cottbus_1030_1327, Veteran, Gutersloh -> Leck): first `--auto` takeoff, attacks, landing
+- Takeoff, route, fighter / missile reactions flew as designed. Both attacks failed in prep: B never selected the target (primary: lock stayed
+  65535; secondary: stuck on record 7, the SAM beside the tank farm). Not new: 32-40 B presses without the briefing target on 10-22, 10-23, 10-27.
+- First landing went around at 22 ft past the aim point (float; go-around fired at the base record). Changed in 778e89a (idle from 30 ft, go-around at
+  80 units past the aim). The retry (entry 348 kt, 765 ft, 18.9 km out) landed but late and hard: ~140 ft over the glide at the aim point, 21 ft at -19 ft/s,
+  touchdown ~0.5 km past the base record, stopped 0.79 km past it (box ends ~1 km). Idle at 30 ft may hurt a steep arrival: follow-up.
+- **TODO (user, 2026-10-30): end of flight.** `fly` exits at speed 0, which leaves the game paused on the runway (EGAME still running). A separate
+  script should end the flight and go to the debrief screen. Not designed; needs the key / menu sequence for the debrief.
