@@ -17,13 +17,13 @@ Layering: gamedata may import only core, so this module carries its own small de
 of the .WLD name list (memory.mission and analysis/theaters have the same; tests/unit/memory checks they agree).
 """
 import random
-import re
 import struct
 import time
 from collections import Counter
 
 from f19.core.settings import settings as _settings
 from f19.core.theater import Theater
+from f19.gamedata import wld as _wld
 
 # START data segment (same values as f19.memory.addresses START_*; that layer can't be imported from here)
 DGROUP = 0x1010
@@ -90,13 +90,12 @@ _NAMES = {}
 
 
 def wld_names(theater, game_dir=None):
-    """The .WLD name list (name_id i -> names[i - 1]), as analysis/theaters.parse_wld reads it.
-    TODO(after WP-3 merges): use gamedata's .WLD loader."""
+    """The .WLD name list (name_id i -> names[i - 1]), found with gamedata.wld.name_start (same list as wld.parse_wld)."""
     th = Theater.parse(theater)
     key = (th, str(game_dir or _settings.game_dir))
     if key not in _NAMES:
         d = ((game_dir or _settings.game_dir) / th.wld).read_bytes()
-        first = re.search(rb"[A-Z][a-z]{2,}\x00", d).start()
+        first = _wld.name_start(d)
         _NAMES[key] = [n.decode("latin-1") for n in d[first:].split(b"\x00")]
     return _NAMES[key]
 

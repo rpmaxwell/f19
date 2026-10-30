@@ -161,7 +161,7 @@ AIRFIELD_SAFE_UNITS = 0x500                                             # no lau
 
 def rough_ceiling(opp):
     """Largest return any Soviet radar type gets on a plane in a rough cell (brute force, 150-300 kt)
-    (a copy of analysis/planner/loiter.rough_ceiling, which stays there until WP-6)."""
+    (the one copy: planner/loiter uses it)."""
     best = 0
     for t in range(1, 23):
         R, P, _ = radar_spec(t)
