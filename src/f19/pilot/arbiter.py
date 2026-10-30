@@ -164,7 +164,7 @@ class Arbiter:
                 if state.systems.flags & BAY: acts.append(Toggle(Action.BAY_TOGGLE, False))
             elif self.phase == "attack":
                 at = self.attack
-                st = self._enrich(state, records=at.target_reads, events=True, projectiles=True)
+                st = self._enrich(state, records=at.target_reads, events=True, projectiles=True, cam=at.wants_cam)
                 c = at.step(st, ctx); take(c, "attack")
                 events.extend(f"{at.role}: {x}" for x in c.events)
                 if c.done:

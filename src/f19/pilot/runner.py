@@ -163,6 +163,8 @@ class Runner:
     for the MOUNTAIN banner; site_names {target record index + 3: "place system"} for the combat log; memlog: MemLog;
     say(text): status lines (not-in-flight, exit)."""
     DEAD_EXIT_S, COMBAT_S, PERIOD_S, PERIOD_MEMLOG_S = 10.0, 3.0, 0.15, 0.05
+    exit_on_done = False                             # fly --exit-on-done: leave the loop once landed and stopped (mission loop, 2026-10-30)
+    LANDED_EXIT = "nav: landed and stopped - done"
 
     def __init__(self, reader, controls, arbiter, loops, bus, clock, route_provider, *, ctx=None, reads=None,
                  memlog=None, sleep=time.sleep, side=None, terrain=None, site_names=None, say=print, event_list_s=1.0,
@@ -301,6 +303,8 @@ class Runner:
         self.controls.apply(dec.command, state, ctx, now)
         for k in dec.key_ups: self.controls.up(k)
         if dec.handover or dec.exit: self.release(roll_level=hdg_on)
+        if self.exit_on_done and dec.phase == "landed" and not dec.exit:
+            return TickResult(now, True, dec, exit=self.LANDED_EXIT, events=events)
         if dec.exit:
             return TickResult(now, True, dec, exit=dec.exit, events=events)
         if self.loops.airborne(state):
