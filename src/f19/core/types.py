@@ -409,7 +409,9 @@ class Route:
     summary: dict = field(default_factory=dict, compare=False, repr=False)
 
     @property
-    def legs(self): return tuple(Leg(i, self.points[i - 1], self.points[i]) for i in range(1, len(self.points)))
+    def legs(self):
+        # Keeps zero-length legs (the planner's own output). The flyer (pilot/phases/fly_leg.py) merges them, as nav did: decided 2026-10-29, one rule per consumer.
+        return tuple(Leg(i, self.points[i - 1], self.points[i]) for i in range(1, len(self.points)))
 
     def with_version(self, v): return dataclasses.replace(self, version=v)
 
