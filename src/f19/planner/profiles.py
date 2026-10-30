@@ -57,6 +57,12 @@ DEFAULTS = dict(
     bay_open_s=15.0,           # bay open before a photo point / Maverick launch (+24 EMV)
     ecm=False,                 # radar jammer on (+16 EMV, halves alert gain); not planned yet
     sa14_cost_samples_per_min=30.0,  # by day, per minute inside an SA-14 cell (bit 0x10); 0 at night
+    sa14_margin_km=3.0,        # hard cells: a route (validate) may not come closer than this to a live cell - the game tests the
+                               # plane's own 32 km cell, and nav's cross-track error is not zero (2026-10-27 a route squeezed
+                               # past the corner shared by two cells at 30 m). The search walls them 4 km out (router.SA14_PAD_CELLS)
+    sa14_hard_from_opp=3,      # opponent level (0 green .. 3 elite) from which live SA-14 cells are walls, not a price: a
+                               # launch is near-certain (spawn > (4 - opp) x 256 units away) and raises the network alert.
+                               # plan.json settings "sa14": "hard" (any level) / "soft" (never) / "auto" (this rule)
     # --- speed and fuel (fuelplan.py, analysis/fuel_model.py) ---
     throttles=(50, 60, 70, 80),  # reachable settings the planner may choose
     # nav holds one speed (~190 kt, 50 % most of the time) and can't fly per-leg throttle yet, so plan what it flies.
@@ -74,6 +80,12 @@ DEFAULTS = dict(
     nav_lb_min=62.1,
     fuel_ref_lb=6000.0,        # fuel weight assumed for search-time speeds (the report integrates the real one)
     # --- objective ---
+    objective="cost",          # how the planned options are ranked: "cost" (route cost, the fuel/transit-km proxy), "points"
+                               # (E[career points] - lambda P(death), a constant fighter hit rate: points.py) or "aircraft"
+                               # (the same value with hits from the fighter model on the route's own alerts: fighters.py)
+    hit_per_min=None,          # objective "points": hits per airborne minute; None = points.HIT_PER_MIN for the opponent level
+    p_hit_launch=0.43,         # objective "aircraft": P(hit | fighter missile)
+    fighter_hunt=None,         # objective "aircraft": overrides of fighters.HUNT (e.g. {"near_mean": 6, "max_shots": 4}); None = as measured
     coldwar_discount=0.0,      # 0..0.9, or "auto": enemy-cell km earn their samples (fuel profile)
     turn_simplicity_km=5.0,    # every corner costs this much: fewer, longer legs for the nav
     # --- loiter (loiter.py): enemy cells no radar can see, flown in nav's LOITER mode ---
@@ -98,12 +110,14 @@ DEFAULTS = dict(
     sample_game_s=64.0,        # cold-war sample interval
 )
 
+OBJECTIVE_KEYS = ("objective", "hit_per_min", "p_hit_launch", "fighter_hunt")    # route.json leaves these out while the objective is "cost"
+
 PRESETS = {
     "stealth": dict(pulse_cost_samples=10.0),
     "balanced": dict(),
     "fast": dict(pulse_cost_samples=0.5, turn_simplicity_km=3.0, enemy_throttle=70, enemy_flaps=False,
                  transit_throttle=70, transit_flaps=False),
-    "fuel": dict(pulse_cost_samples=2.0, coldwar_discount="auto", loiter="auto"),
+    "fuel": dict(pulse_cost_samples=2.0, coldwar_discount="auto"),
     "coldwar": dict(coldwar_discount=0.5),
     "mountain_loiter": dict(pulse_cost_samples=10.0, loiter="auto"),
 }

@@ -26,13 +26,37 @@ ROOT = product.ROOT
 PLANS = FIXTURES / "plans"
 GOLDENS = ["ce_kolobrzeg_1022_2250", "ce_budejovice_1023_1811"]
 INPUTS = ("plan.json", "mission_mem.json")
+# Elite flies live SA-14 cells (terrain bit 0x10, by day) as walls since 2026-10-27 (settings "sa14"). Budejovice's primary photo
+# sits inside cell (7, 13) and its golden route flew 7.8 min through cells, so it is re-planned with the old rule ("soft").
+SOFT = {"ce_budejovice_1023_1811"}
+# keys the 2026-10-27 SA-14 change added; a golden written before it doesn't have them
+NEW_KEYS = {"route.profile.sa14_hard_from_opp", "route.profile.sa14_margin_km", "route.summary.sa14_launch_chance",
+            "route.summary.skipped", "route.spec.settings.sa14"}
 
 
-def _copy_inputs(name, dst):
+def _copy_inputs(name, dst, sa14=None):
     src = need(PLANS / name, f"golden plan fixture {name}")
     d = dst / name; d.mkdir()
     for f in INPUTS: shutil.copy2(src / f, d / f)
+    if sa14:
+        spec = json.loads((d / "plan.json").read_text())
+        spec["settings"] = {**spec.get("settings", {}), "sa14": sa14}
+        (d / "plan.json").write_text(json.dumps(spec, indent=1))
     return src, d
+
+
+# 2026-10-28 planner refactor: loiter combinations that cannot be valid are not planned ("also: ... skipped"), and the loiter is a
+# post-pass on the chosen plan, so the options the report lists, their log lines and the loiter notes differ from a golden written
+# before it. The chosen plan (CHOSEN line, route.json, everything else) must not.
+_OPTION_LINES = ("  also: ", "  option ", "  loiter considered", "  loiter not considered", "  loiter not considered",
+                 "  primary attack bearings by estimate", "  secondary attack bearings by estimate")
+
+
+_NOTE = "  no corridor with the "          # a router note per leg that needed the fallback: legs of options that are no longer planned are gone
+
+
+def _plan_lines(lines):
+    return [l for l in lines if not l.startswith(_OPTION_LINES + (_NOTE,))]
 
 
 def _same(a, b, path=""):
@@ -58,18 +82,34 @@ def test_same_tolerates_last_bit_only():
 @pytest.mark.slow
 @pytest.mark.parametrize("name", GOLDENS)
 def test_golden_replan(name, tmp_path):
-    src, d = _copy_inputs(name, tmp_path)
+    src, d = _copy_inputs(name, tmp_path, "soft" if name in SOFT else None)
     t0 = time.time()
     p = subprocess.run([sys.executable, str(ROOT / "analysis" / "planner"), str(d)], cwd=ROOT, capture_output=True, text=True)
     secs = time.time() - t0
     print(f"{name}: planned in {secs:.0f} s")
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-4000:]
     diffs = _same(json.loads((d / "route.json").read_text()), json.loads((src / "route.json").read_text()), "route")
+    diffs = [x for x in diffs if not (x.endswith("only in new") and x.split(":")[0] in NEW_KEYS)]
+    if name in SOFT:        # the alert simulation now lets an SA-14 launch raise the sites' alerts: expected radar IDs 5.60 vs 5.69
+        diffs = [x for x in diffs if not x.startswith("route.summary.alert.")]
     assert not diffs, f"{len(diffs)} differences, first: {diffs[:10]}"
     new, old = (d / "report.txt").read_text().splitlines(), (src / "report.txt").read_text().splitlines()
-    assert new[1:] == old[1:]
+    if name in SOFT:        # the radar block (alert simulation) moves with the SA-14 launches; the plan below it must not
+        cut = lambda L: L[next(i for i, l in enumerate(L) if l.startswith("CHOSEN:")) - 1:]
+        new, old = cut(new), cut(old)
+    assert _plan_lines(new[1:]) == _plan_lines(old[1:])
+    assert {l for l in new if l.startswith(_NOTE)} <= {l for l in old if l.startswith(_NOTE)}
     a, b = np.load(d / "terrain.npz"), np.load(src / "terrain.npz")
     assert set(a) == set(b) and all(np.array_equal(a[k], b[k]) for k in a)
+
+
+def test_budejovice_primary_in_an_sa14_cell_is_refused_at_elite(tmp_path, egame):
+    """The photo primary (Budejovice, cell (7, 13)) can't be done without entering the cell: a PlanError at Elite by day
+    (4 s), where the old planner flew 7.8 min through cells. Night or settings sa14 soft plan it (SOFT above)."""
+    _, d = _copy_inputs("ce_budejovice_1023_1811", tmp_path)
+    p = subprocess.run([sys.executable, str(ROOT / "analysis" / "planner"), str(d)], cwd=ROOT, capture_output=True, text=True)
+    assert p.returncode != 0 and not (d / "route.json").exists()
+    assert "PRIMARY: Tank Farm Budejovice lies inside SA-14 cell (7, 13)" in p.stderr
 
 
 PG = "pg_shiraz_1024_1514"
@@ -94,7 +134,7 @@ def test_pg_shiraz_known_planerror(tmp_path, egame):
 
 @pytest.mark.slow
 def test_pg_shiraz_full_plan_fails(tmp_path):
-    _, d = _copy_inputs(PG, tmp_path)
+    _, d = _copy_inputs(PG, tmp_path, "soft")           # the baseline bug; with the SA-14 walls the message names them too
     p = subprocess.run([sys.executable, str(ROOT / "analysis" / "planner"), str(d)], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode != 0
     assert f"route.PlanError: {PG_ERROR} (1 hit terrain or the map edge, 11 could not be routed, e.g. 0: {PG_PATH})" in p.stderr

@@ -76,8 +76,9 @@ def new_plan(argv=None):
     ap = argparse.ArgumentParser(description=NEW_PLAN_DOC, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--extra-fuel", type=int, default=0, choices=range(4), help="Extra Fuel tanks in the loadout (0-3)")
     ap.add_argument("--profile", default="stealth", help="planner profile: stealth / balanced / fast / fuel / coldwar")
-    ap.add_argument("--loiter", choices=("auto", "off"), default="auto",
-                    help="farm cold-war samples in an invisible enemy mountain cell if the fuel allows (default auto)")
+    ap.add_argument("--loiter", choices=("auto", "off"), default="off",
+                    help="after planning without one, add a loiter in a radar-quiet enemy cell to farm cold-war samples if the "
+                         "spare fuel buys one (default off: a loiter is not flown yet and costs planning time)")
     ap.add_argument("--theater", default="auto", help="CE / NC / LB / PG (default: detect from the game's memory)")
     ap.add_argument("--roe", type=int, default=0, help="0 Cold War, 1 Limited, 2 Conventional")
     ap.add_argument("--mission", default="strike", choices=("strike", "air"))
@@ -85,6 +86,12 @@ def new_plan(argv=None):
     ap.add_argument("--landing-level", choices=("no_crashes", "easy", "realistic"), help="score estimate only")
     ap.add_argument("--fuel-estimate", type=int, help="briefing FUEL ESTIMATE, lb (score estimate only)")
     ap.add_argument("--night", action="store_true", help="night mission: SA-14 cells are harmless")
+    ap.add_argument("--sa14", choices=("auto", "hard", "soft"), default="auto",
+                    help="live SA-14 cells by day: auto = walls at Elite, a price below; hard = walls at any level "
+                         "(a secondary that needs one is skipped); soft = the price only")
+    ap.add_argument("--objective", choices=("cost", "points", "aircraft"), default="cost",
+                    help="how options are ranked: cost = route cost (default), points = expected career points, "
+                         "aircraft = points with the enemy-fighter model (docs/design/planner_refactor.md)")
     ap.add_argument("--mission-file", help="use a saved mission_mem.json instead of reading the game")
     ap.add_argument("--out", help="plan directory (default logs/plan/<theater>_<place>_<time>)")
     a = ap.parse_args(argv)
@@ -107,10 +114,12 @@ def new_plan(argv=None):
     tk = M["takeoff"]
     takeoff = tk["place"] if not tk.get("carrier") else dict(x=tk["x"], y=tk["y"], label=tk["place"] or "Carrier", carrier=True)
     settings = dict(roe=a.roe, mission=a.mission, opponent=a.opponent, night=a.night)
+    if a.sa14 != "auto": settings["sa14"] = a.sa14
     if a.landing_level: settings["landing"] = a.landing_level
     if a.fuel_estimate: settings["fuel_estimate"] = a.fuel_estimate
     spec = dict(theater=a.theater, takeoff=takeoff, landing=M["landing"]["place"], profile=a.profile,
                 extra_fuel=a.extra_fuel, settings=settings, overrides=dict(loiter=a.loiter))
+    if a.objective != "cost": spec["objective"] = a.objective
     json.dump(spec, open(D / "plan.json", "w"), indent=1)
     print(f"mission: {', '.join(f'{t['role']} {t.get('task', '?')} {t['object']} at {t['place']}' for t in M['targets'])}; "
           f"{M['takeoff']['place']} -> {M['landing']['place']}; plan in {D}", flush=True)
