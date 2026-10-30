@@ -15,7 +15,7 @@ Tests whose data is missing (no `~/f19-data`, no fixtures, no `EGAME.bin`) are s
 
 | File | What | Speed |
 |---|---|---|
-| `test_planner_checks.py` | every check of `analysis/planner/checks.py` as its own case; also pins each check's printed numbers | fast |
+| `test_planner_checks.py` | every check of `f19.planner.checks` as its own case; also pins each check's printed numbers | fast |
 | `test_rules_checks.py` | `radar_game.py check` and `missile_game.py check` (R1 gate + outcomes) on the replay fixtures; on the whole memlog corpus with `--run-slow` | fast / slow |
 | `test_planner_golden.py` | re-plans frozen plan dirs, compares `route.json` field by field, `report.txt` (minus its header line), `terrain.npz`; the known `pg_shiraz` PlanError | slow (+1 fast) |
 | `replay/test_replay_reactions.py` | replay harness: reactions and phases on recorded flights vs the nav log; frozen baseline | fast |

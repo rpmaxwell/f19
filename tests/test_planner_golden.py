@@ -2,7 +2,7 @@
 
 Fixtures: F19_DATA/fixtures/plans/<name>/ holds the inputs (plan.json, mission_mem.json) and the expected outputs
 (route.json, report.txt, terrain.npz), copied from logs/plan/<name>. Each run copies only the inputs to a temp dir and
-runs `python analysis/planner <dir>` in a subprocess, as a user would.
+runs `python -m f19.planner <dir>` in a subprocess, as a user would.
 
   ce_budejovice_1023_1811   CE, Elite, 3 tanks, loiter auto     ~8-10 min
   ce_kolobrzeg_1022_2250    CE, Elite, 2 tanks, loiter auto     ~3-4 min (second golden; no non-CE plan dir reproduces:
@@ -85,7 +85,7 @@ def test_same_tolerates_last_bit_only():
 def test_golden_replan(name, tmp_path):
     src, d = _copy_inputs(name, tmp_path, "soft" if name in SOFT else None)
     t0 = time.time()
-    p = subprocess.run([sys.executable, str(ROOT / "analysis" / "planner"), str(d)], cwd=ROOT, capture_output=True, text=True)
+    p = subprocess.run([sys.executable, "-m", "f19.planner", str(d)], cwd=ROOT, capture_output=True, text=True)
     secs = time.time() - t0
     print(f"{name}: planned in {secs:.0f} s")
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-4000:]
@@ -109,7 +109,7 @@ def test_budejovice_primary_in_an_sa14_cell_is_refused_at_elite(tmp_path, egame)
     """The photo primary (Budejovice, cell (7, 13)) can't be done without entering the cell: a PlanError at Elite by day
     (4 s), where the old planner flew 7.8 min through cells. Night or settings sa14 soft plan it (SOFT above)."""
     _, d = _copy_inputs("ce_budejovice_1023_1811", tmp_path)
-    p = subprocess.run([sys.executable, str(ROOT / "analysis" / "planner"), str(d)], cwd=ROOT, capture_output=True, text=True)
+    p = subprocess.run([sys.executable, "-m", "f19.planner", str(d)], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode != 0 and not (d / "route.json").exists()
     assert "PRIMARY: Tank Farm Budejovice lies inside SA-14 cell (7, 13)" in p.stderr
 
@@ -122,13 +122,14 @@ PG_PATH = "no path from (17616,10988) to (8000,9536)"
 def test_pg_shiraz_known_planerror(tmp_path, egame):
     """Known bug (refactor_plan.md 7): bearing 0 of the Shiraz attack can't be routed. ~15 s (Planner set-up)."""
     _, d = _copy_inputs(PG, tmp_path)
-    plan = product.planner_plan(); route = sys.modules["route"]
+    from f19.planner import cli as plcli, planner as plmod
+    from f19.planner.router import PlanError
     spec = json.loads((d / "plan.json").read_text())
-    spec["takeoff_heading"] = round(plan.game_takeoff_heading("PG", False), 1)
+    spec["takeoff_heading"] = round(plmod.game_takeoff_heading("PG", False), 1)
     spec["overrides"] = {**spec.get("overrides", {}), "attack_bearing_step_deg": 360}     # bearing 0 only
-    pl = plan.Planner(spec, d)
+    pl = plmod.Planner(spec, plcli.load_mission(spec, d), d)
     plain = [pl.takeoff(), *pl.targets(("primary", "secondary")), pl.landing("N")]
-    with pytest.raises(route.PlanError) as e:
+    with pytest.raises(PlanError) as e:
         next(pl.with_attacks(plain))
     msg = str(e.value)
     assert msg.startswith(PG_ERROR) and PG_PATH in msg, msg
@@ -137,7 +138,7 @@ def test_pg_shiraz_known_planerror(tmp_path, egame):
 @pytest.mark.slow
 def test_pg_shiraz_full_plan_fails(tmp_path):
     _, d = _copy_inputs(PG, tmp_path, "soft")           # the baseline bug; with the SA-14 walls the message names them too
-    p = subprocess.run([sys.executable, str(ROOT / "analysis" / "planner"), str(d)], cwd=ROOT, capture_output=True, text=True)
+    p = subprocess.run([sys.executable, "-m", "f19.planner", str(d)], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode != 0
-    assert f"route.PlanError: {PG_ERROR} (1 hit terrain or the map edge, 11 could not be routed, e.g. 0: {PG_PATH})" in p.stderr
+    assert f"PlanError: {PG_ERROR} (1 hit terrain or the map edge, 11 could not be routed, e.g. 0: {PG_PATH})" in p.stderr
     assert not (d / "route.json").exists()

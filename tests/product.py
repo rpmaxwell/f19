@@ -48,15 +48,5 @@ def territory():
 
 
 def planner_checks():
-    """analysis/planner/checks.py imports its siblings as top-level modules (fuelplan, profiles)."""
-    p = str(ROOT / "analysis" / "planner")
-    if p not in sys.path: sys.path.insert(0, p)
-    import checks
+    from f19.planner import checks
     return checks
-
-
-def planner_plan():
-    p = str(ROOT / "analysis" / "planner")
-    if p not in sys.path: sys.path.insert(0, p)
-    import plan
-    return plan

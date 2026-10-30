@@ -172,3 +172,21 @@ def rough_ceiling(opp):
                     best = max(best, site_return(d * 64, 0, 300, h, kt, opp, 4, 0, 0, t))
     return best
 
+
+def check_np(n=100000, seed=1):
+    """site_return_np == site_return on random inputs (was analysis/radar_game.py _check_np)."""
+    import numpy as np
+    g = np.random.default_rng(seed)
+    px, py, sx, sy = (g.integers(0, 32768, n) for _ in range(4))
+    alt, hdg, kt = g.integers(0, 40000, n), g.integers(0, 65536, n), g.integers(100, 600, n)
+    opp, cl, t = g.integers(0, 4, n), g.integers(0, 256, n), g.integers(1, 23, n)
+    bad = 0
+    for tt in range(1, 23):
+        for o in range(4):
+            m = (t == tt) & (opp == o)
+            v = site_return_np(px[m], py[m], alt[m], hdg[m], kt[m], o, cl[m], sx[m], sy[m], tt)
+            ref = [site_return(*map(int, (px[k], py[k], alt[k], hdg[k], kt[k])), o, int(cl[k]), int(sx[k]), int(sy[k]), tt)
+                   for k in np.flatnonzero(m)]
+            bad += int(np.sum(v != np.array(ref, np.int64)))
+    print(f"site_return_np == site_return: {n - bad}/{n}")
+    return bad == 0

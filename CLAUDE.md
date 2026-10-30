@@ -94,8 +94,9 @@ One layered package, `src/f19/`:
 ```
 uv run pytest                                   # tests (tests/); run before calling work done
 uv run pytest --run-slow                        # + golden full-planner runs (3-8 min each); run when you touch the planner
-python analysis/planner <plan_dir>              # plan.json -> route.json + report.txt + route.png
-python analysis/planner/checks.py               # planner model self-checks
+python -m f19.planner <plan_dir>                 # plan.json -> route.json + report.txt + route.png
+python -m f19.planner.checks                    # planner model self-checks
+python -m f19.planner.new_plan --extra-fuel 2    # read the briefing from the running game, write plan.json, plan
 python -m f19.cli.fly --help                    # live autopilot (sends keys to the running game)
 python -m f19.cli.fly --replay <memlog dir> --dry-run --quiet   # offline: whole stack on a recorded flight, nothing sent
 python -m f19.cli.hud --replay <F19_DATA>/logs/memlog/<id> [--route route.json]   # HUD on a recorded flight

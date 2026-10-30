@@ -1,7 +1,7 @@
 """The planner's file side: plan dirs in, route.json / report.txt / route.png / terrain.npz out.
 
   python analysis/planner <plan_dir> [--spec plan.json]          main(): plan.json -> the files (plan.py's docstring)
-  python analysis/planner/new_plan.py --extra-fuel 1 ...         new_plan(): read the briefing, write plan.json, plan
+  python -m f19.planner.new_plan --extra-fuel 1 ...         new_plan(): read the briefing, write plan.json, plan
 
 Everything else (planning, the report text, the picture, the route.json dict) is in memory: planner.api / report.
 """
@@ -61,9 +61,9 @@ def main(argv=None):
 
 NEW_PLAN_DOC = """Plan the mission on the briefing screen in one step: read it from memory, write plan.json, run the planner.
 
-  python analysis/planner/new_plan.py --extra-fuel 1                 (defaults: theater from memory, Cold War, strike, Veteran, day)
-  python analysis/planner/new_plan.py --extra-fuel 2 --profile fuel --night
-  python analysis/planner/new_plan.py --mission-file logs/plan/X/mission_mem.json --extra-fuel 1   (no game needed)
+  python -m f19.planner.new_plan --extra-fuel 1                 (defaults: theater from memory, Cold War, strike, Veteran, day)
+  python -m f19.planner.new_plan --extra-fuel 2 --profile fuel --night
+  python -m f19.planner.new_plan --mission-file logs/plan/X/mission_mem.json --extra-fuel 1   (no game needed)
 
 Writes logs/plan/<theater>_<primary place>_<MMDD_HHMM>/ (plan.json, mission_mem.json, route.json, report.txt,
 route.png) and prints the report and the nav command. --extra-fuel is the number of Extra Fuel tanks you'll load

@@ -1,21 +1,19 @@
 """Unit checks of the planner's game model (notes/planner_radar_prd.md "Done when").
 
-  python analysis/planner/checks.py
+  python -m f19.planner.checks
 
-Radar numbers come from radar_game.py (the game's integer code). The FINDINGS.md detection table
+Radar numbers come from f19.rules.radar (the game's integer code). The FINDINGS.md detection table
 ("Radar sites: pulses, duty cycle, detection") was computed with return + EMV >= 100; the game (and
 radar_game.seen) uses > 100, so pulse ranges come out a few km shorter here. Both are printed.
 """
 import sys
-from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE.parent), str(HERE.parents[1] / "src")]   # radar_game (its _check_np), f19 until the package move
-import numpy as np  # noqa: E402
-import radar_game as rg  # noqa: E402
-from f19.rules import fuel as fuel_model  # noqa: E402
-from f19.planner import fuelplan, planner as plmod, profiles  # noqa: E402
-from f19.rules import trackcam as tc  # noqa: E402
+import numpy as np
+
+from f19.planner import fuelplan, planner as plmod, profiles
+from f19.rules import fuel as fuel_model
+from f19.rules import radar as rg
+from f19.rules import trackcam as tc
 
 FAIL = []
 
@@ -36,7 +34,7 @@ def det_range(kind, aspect, kt=200, emv=10, terrain=2, opp=2, ge=False):
 
 def main():
     # 1. the numpy port the planner uses == the game's scalar formula
-    check("site_return_np == site_return (20k random inputs)", rg._check_np(20000))
+    check("site_return_np == site_return (20k random inputs)", rg.check_np(20000))
 
     # 2. FINDINGS detection table, Veteran, EMV 10, 200 kt, flat land
     sa11, sa11_ge = det_range(5, "side"), det_range(5, "side", ge=True)

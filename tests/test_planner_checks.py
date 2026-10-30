@@ -1,4 +1,4 @@
-"""analysis/planner/checks.py as pytest: every check is its own test case.
+"""f19.planner.checks as pytest: every check is its own test case.
 
 checks.main() runs once per session with its check() recorder swapped for one that collects (name, ok, detail); each
 case asserts its check passed AND that its detail text (the measured numbers) is what the baseline code printed on

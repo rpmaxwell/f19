@@ -4,17 +4,20 @@ import random
 from core_legacy import extract
 from f19.core import units as u
 
-world = extract("analysis/planner/world.py", "K", "CELL_KM", "CELL", "GROUND_PER_KT", "KT_KMH")
+from f19.planner import world as _w
+
+world = {n: getattr(_w, n) for n in ("K", "CELL_KM", "CELL", "GROUND_PER_KT", "KT_KMH")}
 R = random.Random(7)
 
 
 def test_constants_match_old_copies():
-    for rel in ("research/scripts/nav_legacy.py", "scripts/phases.py", "scripts/nav_tui.py", "scripts/missile_watch.py", "analysis/planner/world.py"):
+    for rel in ("research/scripts/nav_legacy.py", "scripts/phases.py", "scripts/nav_tui.py", "scripts/missile_watch.py"):
         assert extract(rel, "K")["K"] == u.K
     assert u.PLAN_CELL_KM == world["CELL_KM"] and u.PLAN_CELL_UNITS == world["CELL"]
     assert u.GROUND_PER_KT == world["GROUND_PER_KT"] == extract("scripts/nav_tui.py", "GROUND_PER_KT")["GROUND_PER_KT"]
     assert u.GROUND_KMH_PER_KT == world["KT_KMH"]          # the planner's "KT_KMH" is ground km/h per indicated kt
-    t3d = extract("analysis/terrain_3d.py", "POS_PER_KM", "FT_PER_POS")
+    from f19.gamedata import terrain as t3d_mod
+    t3d = {n: getattr(t3d_mod, n) for n in ("POS_PER_KM", "FT_PER_POS")}
     assert u.POS_PER_KM == t3d["POS_PER_KM"] and t3d["FT_PER_POS"] == 1000 / u.POS_PER_KM * u.FT_PER_M
     assert u.CELL_UNITS == 2048 and u.CELL_KM == 32 and u.MAP_UNITS == 32768
 

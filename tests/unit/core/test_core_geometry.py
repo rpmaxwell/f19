@@ -20,8 +20,10 @@ mw = extract("scripts/missile_watch.py", "wrap", "deg", "u65")
 gun = extract("scripts/gun_probe.py", "octo")
 rg = extract("analysis/radar_game.py", "angle", "game_dist")
 mg = extract("analysis/missile_game.py", "s16", "gdist", "atan2g")
-route = extract("analysis/planner/route.py", "hdg", "unit", "from_hdg", "turn_deg")
-radar = extract("analysis/planner/radar.py", "hdg65536")
+from f19.planner import radar as _plradar, router as _plroute
+
+route = {n: getattr(_plroute, n) for n in ("hdg", "unit", "from_hdg", "turn_deg")}
+radar = {"hdg65536": _plradar.hdg65536}
 
 
 def pts(n=N, f=F): return [((f(), f()), (f(), f())) for _ in range(n)]

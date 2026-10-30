@@ -1,10 +1,10 @@
 # Planner model
 
-How analysis/planner models radar, altitude and fuel from the game's own rules. Moved verbatim from FINDINGS.md on 2026-10-25 (WP-9); see [the index](../../FINDINGS.md).
+How src/f19/planner models radar, altitude and fuel from the game's own rules. Moved verbatim from FINDINGS.md on 2026-10-25 (WP-9); see [the index](../../FINDINGS.md).
 
 ## Planner model (2026-10-19)
 
-`analysis/planner` now plans on the game's own radar and fuel rules ([notes/planner_radar_prd.md](planner_radar_prd.md)). The old heuristic
+`src/f19/planner` now plans on the game's own radar and fuel rules ([notes/planner_radar_prd.md](planner_radar_prd.md)). The old heuristic
 (range-squared falloff, aspect weights, terrain-shadow LOS grids, flat 60 lb/min at one speed) is gone.
 - **Radar** (planner/radar.py → radar_game.py, numpy port `site_return_np` checked equal to the scalar code): a site
   counts where return + EMV − 100 > −10 (`radar_margin`); cost = expected seen pulses (duty 37.5 %, one per 32 s) ×

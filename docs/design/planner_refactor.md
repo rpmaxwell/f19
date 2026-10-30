@@ -18,7 +18,7 @@ the aircraft/fighter model, new in-flight behaviour.
 - **Behaviour-identical until WP-F.** WP-B to WP-E must produce the same `route.json` (floats within 1e-9 relative) as the baseline. CLAUDE.md: restructuring and behaviour fixes are separate commits. WP-F is the only deliberate behaviour change and is its own commit.
 - **Start from a clean baseline.** At the time of writing the working tree has *uncommitted* planner work (SA-14 hard-wall changes in `world.py`, `planner.py`, `router.py`, `alertsim.py`, `profiles.py`, `report.py`, `cli.py`, and `tests/test_planner_golden.py`).
   Do not start until the owner has committed it or named the baseline. Record the commit you measured against in this file.
-- Oracle: `uv run pytest` (fast), `uv run pytest --run-slow` (the two golden full plans, ~3-10 min each), `python analysis/planner/checks.py`.
+- Oracle: `uv run pytest` (fast), `uv run pytest --run-slow` (the two golden full plans, ~3-10 min each), `python -m f19.planner.checks`.
 - Difficulty: the profile below is one **Elite** plan on a 10-core Mac. Veteran is the default level; re-measure on a Veteran plan (e.g. `ce_liberec_1027_0916`) before claiming a general speedup. Option counts and loiter feasibility differ per plan.
 - Data lives in `F19_DATA` (fixtures: `$F19_DATA/fixtures/plans/*`). Never put data in the repo.
 
@@ -143,7 +143,7 @@ Suggested path for the follow-on: shadow mode (compute the points ranking next t
 
 - Profile and option analysis: this file's measurements; the instrumentation approach above.
 - `docs/design/planner.md` (planner model), `docs/design/refactor_plan.md` (the package refactor, WP numbering differs).
-- `tests/test_planner_golden.py` (goldens, comparison rules), `analysis/planner/checks.py`.
+- `tests/test_planner_golden.py` (goldens, comparison rules), `src/f19/planner/checks.py`.
 - `notebooks/planner_walkthrough.ipynb`: stage-by-stage walkthrough of the planner and the points-objective exercise.
 - `src/f19/planner/api.py` (`plan_mission`, `route`), `planner.py` (`run`, `_run`, `attack_options`, `plan_with_loiter`), `router.py` (`search`, `reduce`, `repair`), `estimate.py` (cheap fuel estimate).
 
