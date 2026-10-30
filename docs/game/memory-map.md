@@ -258,6 +258,12 @@ for that part.
   The Attack controller now sets the trackcam (F2) and presses B until locked == the briefing record (up to 40).
   The photo close now also checks the event log for the type-10 record (`f19_state.read_events`; not yet run live:
   the port stopped answering right after, emulator presumably paused).
+  **CORRECTION (2026-10-29):** the type-10 record is in the list ~1 s after the camera frame (checked in the memlog snapshots of
+  the Kolobrzeg and Katowice flights: `8A 01 <t>` / `<xx> <yy>`, record 1; time field 0 until the next sample). The list sits at
+  **ds:0x89BA** in those loads (it is inside the memlog `egame_data` window); `addresses.EVENTS` ds:0x8E46 / `N_EVENTS` ds:0x632E
+  read zeros there, so `read_event_list` is stale. The live miss: `find_events` cached "not found" for the whole session when
+  the first read came before the list held its takeoff + first sample records; fixed by retrying a miss every 5 s. Not yet
+  confirmed live (replays pop the cache on every seek, so they never showed it).
 - **Trackcam must be ON for B (2026-10-18):** with the left CRT on the waypoint screen, B did nothing (the lock sat on 140,
   not a target record). `/` (trackcam ahead, D2 scancode 0x35) brought the camera up, locked on 32 (Mittenwalde AirBase),
   and one B press locked record 2. Attack prep order: F2 to air-to-ground, `/`, then B until locked == record.
@@ -495,6 +501,20 @@ the territory grid (ds:85FC, the same 256 bytes as analysis/territory.py) and en
 "SA-14 fired" is shown, and the network alert fires. CE has 8 such cells, down the front line (column 4-7, rows 5-13).
 **The Tabor crash flight (nav 1792346075) entered SA-14 cell (7,13) 227 s before the crash; the debrief's first SA-14 hit
 was ~214 s before it.** The "lucky SA-14s" are these cells, not radar sites. Planner: avoid 0x10 cells by day.
+
+- **SA-14 cells are walls for the planner at Elite (2026-10-27).** The Elite Carlsbad plan (`ce_carlsbad_1027_1842`) flew
+  7.4 min through cell (4, 6) because its secondary, a photo of Wittenberg at (9800, 12984), sits in that cell and the
+  router only priced cells (30 samples per minute). Now (`settings.sa14` auto/hard/soft, profile `sa14_hard_from_opp` = 3):
+  live cells are walls in the route search and in `validate`; a secondary whose photo/overfly attack has to enter a cell is
+  skipped (a Maverick target in a cell is not: the launch point is 14 km out); the primary in a cell, or no route that
+  avoids them, makes the plan INVALID. Chance that one spawn check launches = P(random point of the cell is more than
+  (4 - opp) x 256 units from us) = 1 - pi (4-opp)^2 256^2 / 2048^2 (centre of the cell): green ~21 %, regular ~56 %,
+  veteran ~80 %, elite ~95 % (derived from the spawn rule above, not measured; the 57 Veteran SA-14s fit it). Checks
+  come every 32 game s, so 7 min in a cell is ~13 checks: a launch (and the network alert) is certain at Elite and likely at
+  Veteran. `alertsim` now models it (`!! PREDICTED SA-14 launch` in the report). Untested live: the skip/wall rules have
+  only been run offline. CE's cells (3,10) and (3,11) plug the only pass between the western mountains and Carlsbad's
+  pocket, so Carlsbad-type targets in the east pocket cannot be struck and left without entering a cell at Elite.
+  `scripts/mission_finder.py --no-sa14 / --sa14-primary / --sa14-secondary yes|no` filters missions by it.
 
 **Event list** (memlog-confirmed layout): ds:8E46, 6 B records `[u16 clock, u8 x>>7, u8 y>>7, u8 type|flags, u8 target]`,
 count ds:632E (max 255). Recorder 0x4b40(type, target). Types:

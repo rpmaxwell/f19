@@ -218,3 +218,31 @@ missile rules flown against the player model under MissileWatch, CMs landing aft
 AA-9 hits (as in the real flights). MissileWatch: 0/4 at a 0.3-1.0 real s key latency (one chaff each for the close
 shots, a decoy for the two where chaff left < 2x the hit radius). At 2.0 s latency the 3.5-3.9 km shots (~4 game s of
 flight) get through whatever is done: **the key latency is the first thing to measure live.**
+
+## Who actually hits us: counts from the memlogs, by difficulty (2026-10-28)
+
+Counted from 33 readable memlog flights (`analysis/missile_game.py` `load_run` / `tracks`; a hit = damage count up by `opp + 1` right after the
+missile's last sighting, as `outcomes()` defines it). Launcher type from the missile's launcher index (< 0 aircraft, 1 SA-14 cell, > 1 site).
+Older flights whose memory layout does not read are excluded (8 of 41). The counting code is in `notebooks/planner_walkthrough.ipynb` (last section).
+
+| difficulty | flights | airborne min | launcher | launches | hits |
+|---|---|---|---|---|---|
+| Veteran | 21 | 1878 | SA-14 cell | 58 | 0 |
+| Veteran | | | fighter, ground SAM | 0 | 0 |
+| Elite | 7 | 347 | ground SAM (SA-10, SA-11) | 11 | 0 |
+| Elite | | | SA-14 cell | 2 | 0 |
+| Elite | | | **fighter** (AA-8, AA-9, AA-10) | 23 | **10** |
+
+- **At Elite every hit we have taken is a fighter missile** (10 of 23 launches, 43 %, 90 % interval 28-60 %, in 4 flights; the hits fall in 3). Ground SAMs and SA-14s
+  have hit 0 times in 71 launches. At Veteran there is no hit and no fighter launch in the logs. Nothing here says what Regular or Green would do.
+- **`planner/alertsim.py` models sites and SA-14 cells, not fighters** (its docstring says so). So its launch probability does not see the risk that actually costs damage at Elite.
+- **Warning and reaction (Elite):** fighter missiles are visible for a median of 5 s (0-12 s; a lower bound, snapshots are ~2.6 game s apart) and **no countermeasure was used on any of the 23**.
+  Ground SAMs give 46-160 s and had a countermeasure used on 7 of 11. 7 of the 10 fighter hits had at least 4 s of warning, and in 3 of those a store that beats the missile was in stock
+  (the six-hit flight had spent all three decoys on SAM shots earlier). So the 43 % is the hit rate with *no reaction*; it is not a property of the missiles.
+- **Launch given "launch possible"** (site alert > 0xC0 and the plane inside the SAM's range): 5 of 6 episodes in the logs (all Elite) were followed by a launch from that site, 2.2 missiles per episode.
+- **Rate:** Elite fighter launches 0.066 per airborne minute, hits 0.029 (90 % interval 0.004-0.075, resampling flights). Biased high: Elite flights ended at the first serious damage.
+  Veteran fighter launches: 0 in 1878 minutes (rule of three: below 0.0016 per minute).
+- **Damage per hit is exact** (from the 0x7A0B rule in memory-map.md): `opp + 1` independent draws of `1 << random(8)`, so P(bay jammed) = P(leak) = `1 - (7/8)^(opp+1)`:
+  **33.0 % Veteran, 41.4 % Elite**; both 8.2 % / 14.4 %. Checked against a simulation of the rule; the first hit of each of the three damaged Elite flights set the bay in 1, the leak in 2.
+- **Leak cost:** extra burn is `count` lb per 4 game s, `count = 2 + (opp+1) x hits`: **15 x count lb per game minute** (75 after one Veteran hit, 90 after one Elite hit, vs ~62 planned).
+- **Untested / open:** how much of the fighter rate depends on route (altitude, enemy-cell time, mission type) is not separable with 7 flights; the post-reaction hit rate is unmeasured; Veteran fighter behaviour is unmeasured (none launched).

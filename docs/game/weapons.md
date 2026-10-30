@@ -122,3 +122,11 @@ Plan built on this: [notes/gun_attack_plan.md](../design/gun_attack_plan.md).
 - Kill points (END 0x4258 [roe][cat], cat = END ds:998A[class & 0x7f] & 0xf, the .WLD 100-B category table read at
   END_decomp.c:132): Limited 2,6,1,1,3,8,2,2,5,3,1,9,4,0,0,0; Conventional 4,12,3,3,6,16,4,5,11,7,3,18,8,0,0,0.
   Before the table: type flag 0x40 or a target in a non-enemy cell -> -25; flag 0x80 -> ds:4222 (-10/-4/+1).
+
+## Photo frames that do not count (2026-10-28)
+
+Established from memlogs (no live test of the fix yet). Six frames that counted (flights 1792542533, 1792546698, 1792603394 x2, 1792609731 and one more) were fired with the photo-score model
+(`|e - pitch + 9.74|` + heading error + range, units) at 195-216; two that did not count (1793133230 at about 225-240; Prague 1793212799 at 233, bay open the whole time, the event
+list holds no type 10) were fired at the relaxed trigger (score < budget - 20 = 236). The model passes both, so either the game's real window is tighter than `(8 - 2 opp) x 64` by roughly 20-40 units or
+the model misses a term; **not established**. Prague also had a 3-4 deg heading error (0.4-0.65 km cross-track at the run-in), worth 35-45 units. Fix in `Attack`: keep pressing Enter every
+`FRAME_RETRY_S` (1 s) until the event log shows type 10 for the target (bay stays open), give up at the photo point; `Attack.CONFIRM_PHOTO = False` restores one frame. Untested live.

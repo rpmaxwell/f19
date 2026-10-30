@@ -68,3 +68,69 @@ Landing mode m = gameData+0x40 (0 No Crashes, 1 Easy, 2 Realistic). ds:684C bits
   64 units past it, so **~1.9 km** (Easy +0.125 km). Touching the ground outside the box above 50 kt = crash code 1.
 - Logged nav takeoffs (CE, full throttle): lift-off at 123 / 129 kt; 139 kt after 0.53 km, 190 kt after 1.03 km,
   206 kt after 1.12 km (~20 kt per real second).
+
+## Ejection: when it kills you — EGAME + END (2026-10-28)
+
+Established by static disassembly of EGAME.bin / END (`research/analysis/egame_re/egame_all.asm`, `end_re/END_decomp.c`) and a sanity check
+of the inputs on the logged flights. **Not tested live** (Shift+F10 has not been pressed in a flight yet, see first_flight_checklist.md (g)).
+Addresses are image offsets in EGAME.
+
+- **The key:** BIOS key code 0x5D00 (Shift+F10) in the key dispatch (0xD9EF) jumps to the handler at 0xD6F5. Its only gate is
+  `ds:944A == 0` (not already ejecting). No altitude, speed, gear or damage precondition.
+- **The death roll is made once, at the instant of ejection** (0xD6FF-0xD75F):
+  `T = 500 + rand(300)`; `S = (|pitch16| >> 5) + (|roll16| >> 5) + kt`; **if S > T: crash code 6 ("ejection failed"), else landingType (+0x26) = 2.**
+  Then `ds:944A = 1` and the seat starts. pitch16 / roll16 are ds:46DC / ds:46DE as signed 16-bit angles (65536 = 360 deg, so
+  each degree of |pitch| or |roll| adds 5.69 to S); kt is ds:855A = ds:7F94 / 27 (computed every frame at 0x29D4);
+  `0xFB7C` is `abs(int16)`; `rand(n)` (0xD34B) is `(lcg15 * n) >> 15` with the MSVC LCG `seed * 0x343FD + 0x269EC3` (0xFBA4), uniform on 0..n-1.
+  Hence **P(death | eject command) = clamp(S - 500, 0, 300) / 300**. **It does not depend on altitude.**
+  Level at 190 kt it is 0; it starts when |pitch| + |roll| exceeds about 54 deg (190 kt) / 47 deg (230 kt) / 35 deg (300 kt) and is certain
+  above about 107 / 100 / 88 deg. Example: a 60 deg bank at 230 kt is S = 571, 24 %; a 90 deg bank is S = 742, 81 %.
+- **Nothing after a successful ejection kills.** Every later crash code is ignored: the setter 0x4ACD does nothing for a non-zero code while
+  `ds:944A != 0`, and the ground-crash (0x4291, code 1) and missile-damage (0x486A) paths are themselves gated on `944A == 0`. The seat
+  (0x24F1-0x2552) integrates `ds:966A` (altitude + 8 at ejection) by `clamp(32 - n, -160/fs, 128/fs)` per frame; reaching 0 calls the setter with
+  **code 0** (no crash), so landing under the seat at any altitude is survived.
+- **Setter callers (all of them, by a scan for near calls to 0x4ACD):** code 1 at 0x2159 and 0x42DB (ground), 2 at 0x43E9 (hill), 5 at 0x2D9C (runway cartwheel),
+  6 at 0xD753 (ejection failed), 0 at 0x254C and 0x439A (no crash). Codes 3 (fuel) and 4 (missiles) are **not** set through this setter (no other
+  write to commData+0x28 exists in EGAME.bin); where END gets them is open.
+- **Debrief (END 0x449C, case 1):** landingType 2 shows "Good Bailout" if +0x28 == 0 and ds:978C != 0, "Captured" if +0x28 == 0 and ds:978C == 0
+  (the territory byte already used for the x2/8 rule), and **"Bailed & Died" if +0x28 != 0**. With the guard above that needs a non-zero code set *before*
+  the ejection began (a plane already crashing or destroyed). A failed roll leaves landingType unset and prints "your attempt to eject ... failed" instead.
+  commData+0x28 != 0 is the "dead" flag (see scoring-awards.md).
+- **Sanity check of the inputs, 34 logged flights (ReplayReader), 19,357 airborne states at 100-450 kt:** S median 259, p99 469; the roll would fail in 0.07 % of
+  states, mean P(fail) 0.02 %. Only states with |roll| > 30 deg (69 of them) are at risk: 11.6 % of those have P > 0. These are autopilot flights, mostly level,
+  so they say nothing about missile evasion. (About 5,000 snapshots in one run are a frozen junk state, 1285 kt, and were excluded.)
+- **Still open:** the live effect of the roll (it should match the formula; try ejecting from a save state in a steep bank and in level flight); whether the damage state
+  also feeds S (ds:855A is the only non-attitude term found); where codes 3 and 4 are set; what "Captured" does to the next mission beyond no medal and no promotion.
+
+## Safe bail-out: level first, then Shift+F10 (2026-10-28)
+
+Built on the death-roll formula above, so it is only as good as that disassembly read. `src/f19/pilot/eject.py` (`LevelOut`), called by
+`Runner._level_then_eject` for every permitted `Action.EJECT` (so the director's bail-outs too; on by default in `fly` since 2026-10-29, `--no-eject` turns it off):
+steer pitch and roll to 0 with key taps (keypad 5 stops the rates when the coast would overshoot), **arm** when both are within 5 deg, both
+rates are under 1.5 deg/s and S <= 470, and send the key on the **next** read only if the plane is still inside those limits. Fallbacks, because
+not ejecting is worse than a risky eject: 25 s without level, altitude under 40 ft, or a failed read all eject at once.
+- Established: offline only (a toy plane with key gains different from the controller's guesses, `tests/unit/pilot/test_eject_level.py`).
+- **Untested live:** the roll and pitch key gains (`ROLL_GAIN`, `PITCH_GAIN` are guesses), the roll-key sign (taken from the bank-limit code in
+  `loops.py`), and whether centring with keypad 5 behaves as the toy plane assumes. Try it from a save state in a steep bank first.
+- Not handled: S has a speed term, so above ~450 kt even a level plane can fail the roll; the sequence does not slow the plane down.
+
+## Hill crash (END code 2) = a solid hit while airborne; photo-run pull-up (2026-10-29)
+
+- END's two crash texts: code 1 "Flying into the ground…", code 2 "Flying into that hill…". There is no "mountain" string in END.
+- Code 2 (EGAME 0x43A9-0x43E9): the renderer's collision flag ds:6EAC (= ds:33C6 after the terrain/object draw call at 0x3A15) is set,
+  ds:94E0 bit 0x80 is clear, landing mode (gameData+0x40) is not No Crashes, and altitude ds:46E2 is non-zero. With altitude 0 the same
+  flag only bumps altitude by +500 (0x43F1). Code 1 is the altitude-reaches-ground-level path instead.
+- Established by disassembly (`research/analysis/egame_re/egame_all.asm` 0x43a9) and two live flights (Veteran-or-below, `level` 0 in
+  the mission file; difficulty not otherwise recorded): Kolobrzeg (nav 1793275501) and Katowice (nav 1793240391) both ended in
+  "hill" 0.11-0.12 km from the Tank Farm's coordinates at 247-251 ft, 196-204 kt, mid photo run. No decoded terrain solid (`World.solids_at`)
+  exists at either point, so the solid was most likely the Tank Farm's own model. Liberec (nav 1793236937) passed 0.08 km from its
+  Tank Farm at 314 ft and survived, so the model tops out between ~251 and ~314 ft (two data points; not measured).
+- Cause in our code: the photo run held a straight line at 250 ft and only ended on the event-log photo record, which was never seen
+  (below), and nothing climbed over the target. `Attack` now ends the run inside `CLEAR_KM` (1.0 km) whether or not the photo is
+  confirmed, climbs `CLEAR_UP_FT` (150 ft) over the run-in altitude and keeps control until `CLEAR_PAST_KM` past the target.
+  Untested live: whether +150 ft clears every Tank Farm, and the radar cost of the climb.
+- **First live run (2026-10-29, Veteran-agnostic: the roll does not depend on difficulty as read), dry: Shift+F10 replaced by a log line.** From a -34 deg bank at 289 kt and 1900 ft the
+  loop reached roll -4 / pitch +4.5 (S 537 -> 362) in ~10 s and armed; keyboard sensitivity 1 -> 2 worked (Ins); learned key gains at sensitivity 2: roll ~32,
+  pitch ~17 deg/s per s held (baseline now 25 / 15). The first version levelled roll first and let the nose drop 510 ft; the vertical-speed term
+  (nose-up target 0.15 deg per ft/s of sink + a creeping bias, no arming while sinking > 15 ft/s, eject at once under 2 s from the ground) and tapping both
+  axes in one pass came after. The roll swung +-10 deg while converging (taps too long for the gain); re-test pending. **The Shift+F10 itself is still untried.**
