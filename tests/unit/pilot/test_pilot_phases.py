@@ -105,7 +105,7 @@ def test_landing_equivalent(egame, kind):
     fix = (FIX[0], 2 * BASE[1] - FIX[1]) if kw.get("south") else FIX
     old, new = ph.Landing(BASE, fix, ph.Throttle()), Landing(BASE, fix)
     new.IDLE_ALT, new.GA_PAST_UNITS, new.LOG_GO_AROUND = 15, new.AIM_UNITS, False   # 2026-10-30 changes off: parity with scripts/phases.py
-    new.BLEED_KT, new.HIGH_FT, new.IDLE_SINK_MAX = None, None, None
+    new.BLEED_KT, new.HIGH_FT, new.IDLE_SINK_MAX, new.STEEP_VS = None, None, None, None
     old_thr[0] = old.thr
     rep = run_phase(old, new, ticks(w, 3000), old_step, extra=lambda b: (b.state, b.rwy, b.aim, getattr(b, "idled", False)), after=after)
     assert rep.all_equal, rep.first_diff
@@ -193,6 +193,16 @@ def test_landing_keeps_power_below_30_ft_while_sinking_fast():
     c = ManualClock(0.0); ld = Landing(BASE, FIX); ld.state = "final"
     _approach(ld, 34, 0.9, 130, 0.0, c); cmd = _approach(ld, 28, 0.8, 130, 1.0, c)   # 6 ft/s: idle at 28 ft
     assert Action.THROTTLE_IDLE in cmd.actions and ld.idled
+
+
+def test_landing_allows_a_steeper_sink_only_while_well_above_the_glide_line():
+    # aim point 48 units short of BASE: 4 km to the aim = 4.75 km before the base record; glide line = 4 x 60 = 240 ft
+    ld, cmd, _ = _landing_step(alt=400, km_past_base=-4.75)         # 160 ft above the line, above 150 ft: 18 ft/s
+    assert cmd.vs_max == 18.0
+    ld, cmd, _ = _landing_step(alt=300, km_past_base=-4.75)         # 60 ft above: the usual 12 ft/s
+    assert cmd.vs_max == 12.0
+    ld, cmd, _ = _landing_step(alt=140, km_past_base=-1.0)          # below 150 ft: never the steep limit
+    assert cmd.vs_max in (6.0, 12.0) and cmd.vs_max != 18.0
 
 
 # ----------------------------------------------------------------------------------------------------------- attack

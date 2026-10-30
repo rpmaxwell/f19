@@ -65,6 +65,13 @@ def parse_wld(th):
     return dict(file=WLD_FILE[th], names=names, records=recs)
 
 
+def record_count(th):
+    """Records the game's target table holds for the theater: .WLD header word 1 (CE 75, GULF 64, NC 46, LIBYA 37).
+    Table layout (memory.mission, memlog 1793126949): record 0 = scratch, 1 and 2 = the generated target slots, then
+    the place records from 0x38, so game record k is place k - 3."""
+    return struct.unpack_from("<H", wld_bytes(th), 2)[0]
+
+
 def places_path(th):
     return S.logs / "theater" / f"{code(th)}.json"
 

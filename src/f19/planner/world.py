@@ -16,7 +16,7 @@ from f19.core import units
 from f19.core.settings import settings as S
 from f19.gamedata import terrain as _terrain
 from f19.gamedata.radar_systems import RADAR_NAMES
-from f19.gamedata.wld import grid as territory_grid, places
+from f19.gamedata.wld import grid as territory_grid, places, record_count
 from f19.rules import radar as _rr
 
 OPP = {"green": 0, "regular": 1, "veteran": 2, "elite": 3}
@@ -119,6 +119,20 @@ class World:
         # raises the network alert (docs/game/memory-map.md "SA-14 cells")
         self.sa14_hard = bool(self.sa14_cells.any()) and (mode == "hard" or (mode == "auto" and self.opp >= profile["sa14_hard_from_opp"]))
         self.targets = mission["targets"]
+
+    def trackcam_records(self):
+        """The game's target table as the trackcam search walks it: [(index, x, y, flags)], all alive. Record 0 is the scratch
+        record (0, 0 at the start of a flight), 1 and 2 the generated target slots (the mission's targets, by their record),
+        3.. the .WLD places. Read-only, cached; what the planner cannot know (aircraft, destroyed state) is not in it."""
+        if not hasattr(self, "_cam_records"):
+            n = record_count(self.th)
+            recs = {0: (0, 0, 0)}
+            for t in self.M["targets"]:
+                if t.get("record") is not None: recs[int(t["record"])] = (float(t["x"]), float(t["y"]), 0)
+            for j, r in enumerate(places(self.th)["records"][:max(0, n - 3)]):
+                recs.setdefault(j + 3, (float(r["x"]), float(r["y"]), r["flags"][0]))
+            self._cam_records = tuple((k, *recs[k]) for k in sorted(recs))
+        return self._cam_records
 
     # --- point queries (arrays of game-unit coordinates) ---
     def _fine(self, x, y):

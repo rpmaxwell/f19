@@ -164,7 +164,7 @@ def test_flight_1792724414_cycle_2_6_34_16_38():
 
 
 def test_flight_1793382037_second_attack_rule_predicts_7_then_1():
-    s, cam = _near("1793382037", 1793383628.7)
+    s, cam = _near("1793382037", 1793383628.0)
     assert cam.screen == 0x13 and s.systems.station == 1 and s.systems.locked == 7
     c = T.candidates(s.xy, s.heading, cam.view, cam.night, cam.records, 2)
     assert [(x.index, x.dist) for x in c][:2] == [(7, 527), (1, 847)]

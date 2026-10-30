@@ -39,6 +39,10 @@ class Landing:
     # small steps with pauses, only began adding it at 92 kt: stall, -90 ft/s, the plane hit the ground 3 km out. Do not switch it on
     # without a power floor / a direct throttle command on the way back (and a test in the air at altitude).
     BLEED_KT, RESUME_KT, HIGH_FT, HIGH_KM, IDLE_SINK_MAX, LOW_IDLE_ALT = None, 12, 160, 1.0, 10.0, 15
+    # 2026-10-30, fourth Leck landing (246 kt, 641 ft, 9 km out): the 12 ft/s sink limit is only ~85 ft/km at 230 kt against a 60 ft/km glide
+    # line, so a high fast entry never caught the line (190 ft above it at 1 km) and the height gate sent it around. So while more than
+    # STEEP_EXCESS ft above the line and above STEEP_ALT the limit is STEEP_VS ft/s (None: off).
+    STEEP_VS, STEEP_ALT, STEEP_EXCESS = 18.0, 150, 80
     LOG_GO_AROUND = True                           # one event line with the reason (the old phases logged none)
     # Short final (2026-10-20 go-around): below GLIDE_ALT the hold flies a SINK RATE aimed at the touchdown point
     # (height / time to the aim point, at least MIN_SINK) with a GLIDE_DEADBAND ft/s deadband. And no power added below
@@ -81,6 +85,7 @@ class Landing:
             out["alt_cap"] = max(0.0, to_aim * self.ALT_PER_KM)   # glide path: never above it, never climb to it
             # sink limits by height: 12 ft/s above 100 ft, 6 ft/s down to the flare, 4 ft/s in the flare
             out["vs_max"] = self.FLARE_VS if alt < self.FLARE_ALT else 6.0 if alt < 100 else 12.0
+            if self.STEEP_VS is not None and alt > self.STEEP_ALT and alt - out["alt_cap"] > self.STEEP_EXCESS: out["vs_max"] = self.STEEP_VS
             if self.state == "final" and alt < self.GLIDE_ALT:
                 t_aim = max(2.0, to_aim * 1000 / max(30.0, spd * 0.5144))      # s to the aim point (2 s once past it)
                 out["vs_target"] = max(-out["vs_max"], min(-self.MIN_SINK, -alt / t_aim))

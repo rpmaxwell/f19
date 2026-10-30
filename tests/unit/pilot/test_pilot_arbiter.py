@@ -305,7 +305,7 @@ def _landing_parity(monkeypatch):
     from f19.pilot.phases import Landing
     monkeypatch.setattr(Landing, "IDLE_ALT", 15); monkeypatch.setattr(Landing, "GA_PAST_UNITS", Landing.AIM_UNITS)
     monkeypatch.setattr(Landing, "LOG_GO_AROUND", False)
-    for k in ("BLEED_KT", "HIGH_FT", "IDLE_SINK_MAX"): monkeypatch.setattr(Landing, k, None)
+    for k in ("BLEED_KT", "HIGH_FT", "IDLE_SINK_MAX", "STEEP_VS"): monkeypatch.setattr(Landing, k, None)
 
 
 def _synthetic(tmp_path, args, strafe=(), n=400, dy=10.0, fuel_at=None):

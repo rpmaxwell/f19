@@ -52,7 +52,7 @@ import numpy as np
 
 from f19.core.theater import Theater
 from f19.gamedata.wld import categories
-from f19.rules import weapons
+from f19.rules import trackcam, weapons
 
 from . import alertsim, fighters, fuelplan, loiter, points, pool, probes, profiles
 from .estimate import lb_per_km
@@ -67,6 +67,12 @@ MAX_PROBE_TRIES = 6
 MAVERICK = 5                        # ordnance.py loadout index (AGM-65D)
 MAV_HALF_ANGLE = 22.0               # target must be within this of the nose at launch
 MAV_WINDOW_KM = (6.0, 14.5)         # missile reach ~14.5-15.5 km (ttl = R*32 units at top speed = the 16 km cue)
+# Trackcam acquisition (docs/design/target_acquisition_task.md; rules.trackcam): the run-in must hold a stretch of at least
+# ACQ_MIN_KM where "/" then at most ACQ_MAX_PRESSES B presses lock the target. A run-in that has none is lengthened by
+# ACQ_EXTEND_KM (cumulative steps) before the bearing is dropped. ACQ_PHOTO_BAY_KM: the autopilot opens the bay this far
+# before the photo point (Attack.PHOTO_BAY_KM), the lock has to be there before.
+ACQ_MIN_KM, ACQ_MAX_PRESSES, ACQ_STEP_KM = 3.0, 8, 0.25
+ACQ_EXTEND_KM, ACQ_PHOTO_BAY_KM = (2.0, 4.0, 6.0), 3.0
 PHOTO_KM = {"green": 2.0, "regular": 2.0, "veteran": 2.0, "elite": 0.7}
 FUEL_FALLBACK = (0.3, 0.1)          # radar price x these when the planned profile's route doesn't fit the fuel (api)
 
@@ -143,6 +149,7 @@ class Planner:
         self.skipped_options = []          # [(tag, why)] loiter combinations ruled out by loiter_bound (not planned)
         self._mission0 = self.M            # what pool workers rebuild this Planner from (self.M loses skipped targets)
         self._sa14_blocked = 0
+        self._acq_blocked = 0              # attack bearings dropped for having no trackcam acquisition window
         self._attack_memo = {}             # attack_options() results by (previous piece, target, next piece, mode)
         self._pool, self._pool_dead, self._in_run = None, False, False     # worker processes live only inside _run
         self.loiters = self._loiter_choices() if loiters else []
@@ -247,27 +254,65 @@ class Planner:
         return self._mav.get(obj)
 
     def attack_piece(self, el, t, mode, b):
-        """Fixed piece for attacking target t on bearing b (deg), or None when it hits terrain / the map edge."""
+        """Fixed piece for attacking target t on bearing b (deg), or None when it hits terrain / the map edge, or when the
+        trackcam cannot be sure to lock the target on the run-in (acquisition_window). The run-in is lengthened by
+        ACQ_EXTEND_KM steps while that helps; the piece carries the window in the run-in point's "acq" attribute."""
         T, u, P = np.array(el["xy"]), from_hdg(b), self.P
         role, name = el["role"], f"{t['object']} {t['place']}"
         at = lambda kind, action: {"kind": kind, "role": role, "action": action}
+        if mode == "maverick": near = P["maverick_launch_km"]
+        else: near = (P["photo_km"] or PHOTO_KM.get(self.spec.get("settings", {}).get("opponent", "regular"), 2.0)) + ACQ_PHOTO_BAY_KM
+        acq, runin = None, P["attack_runin_km"]
+        for extra in (0.0,) + ACQ_EXTEND_KM:
+            runin = P["attack_runin_km"] + extra
+            acq = self.acquisition_window(t, T, u, b, near, near + runin)
+            if acq is None or acq["ok"]: break
+        if acq is not None and not acq["ok"]: self._acq_blocked += 1; return None
         if mode == "maverick":
-            L = T - u * P["maverick_launch_km"] * K; S = L - u * P["attack_runin_km"] * K
+            L = T - u * P["maverick_launch_km"] * K; S = L - u * runin * K
             pts = [(S, f"{role.upper()} run-in", at("runin", f"Maverick run-in on {b:.0f}: select {name}, cruise height and speed")),
                    (L, f"{role.upper()}: Maverick launch at {name}",
                     at("launch", f"LEVEL launch at {P['maverick_launch_km']:.0f} km (hexagon red): bay open, FIRE Maverick, bay closed"))]
         else:
             ph = P["photo_km"] or PHOTO_KM.get(self.spec.get("settings", {}).get("opponent", "regular"), 2.0)
-            F = T - u * ph * K; S = F - u * P["attack_runin_km"] * K
+            F = T - u * ph * K; S = F - u * runin * K
             pts = [(S, f"{role.upper()} run-in", at("runin", f"photo run-in on {b:.0f}: camera + {name} selected, straight at it")),
                    (F, f"{role.upper()}: photo point {ph:g} km", at("photo", "PHOTO: bay open, nose on target, FIRE camera, bay closed")),
                    (T, el["label"], at("overfly", "frame taken? then turn away"))]
+        if acq is not None: pts[0][2]["acq"] = {k: acq[k] for k in ("far_km", "near_km", "len_km", "presses", "ok")}
         xy = [p for p, _, _ in pts]
         if not all(64 <= c <= self.W.size - 64 for p in xy for c in p): return None
         if not all(self.W.segment_clear(a, c) for a, c in zip(xy, xy[1:])): return None
         if self.W.sa14_hard and not all(self.W.sa14_clear(a, c) for a, c in zip(xy, xy[1:])):
             self._sa14_blocked += 1; return None             # the run-in / photo point would sit in a live SA-14 cell
         piece = fixed(pts); piece.update(role=role, attack=mode, bearing=b); return piece
+
+    def acquisition_window(self, t, T, u, b, near_km, far_km):
+        """Where on the straight run-in (distances near_km..far_km before the target T, heading b) the trackcam can lock the
+        target by "/" then B: the target is inside the game's cone and range with the planner's margin
+        (rules.trackcam.SAFE_*) and the decoded pick reaches it in at most ACQ_MAX_PRESSES B presses. Returns the longest
+        such stretch as dict(far_km, near_km, len_km, presses (the most in the stretch), ok (len_km >= ACQ_MIN_KM)), or None
+        when the target has no record in the world's table (nothing to check). Every record is assumed alive; the
+        aircraft records and the scratch record's later position are not known to the planner (the autopilot checks live)."""
+        rec = t.get("record")
+        recs = self.W.trackcam_records()
+        if rec is None or not any(r[0] == rec for r in recs): return None
+        Tt, night, best, run = (float(T[0]), float(T[1])), self.W.night, None, None
+        d = near_km
+        while d <= far_km + 1e-9:
+            p = (Tt[0] - u[0] * d * K, Tt[1] - u[1] * d * K)
+            n = None
+            if trackcam.acquisition_ok(p, b, Tt, night):
+                n = trackcam.slash_then_presses(rec, trackcam.candidates(p, b, 0, night, recs))
+                n = None if n is None or n.presses > ACQ_MAX_PRESSES else n.presses
+            if n is None: run = None
+            elif run is None: run = [d, d, n]
+            else: run[1] = d; run[2] = max(run[2], n)
+            if run and (best is None or run[1] - run[0] > best[1] - best[0]): best = list(run)
+            d += ACQ_STEP_KM
+        if best is None: return dict(far_km=0.0, near_km=0.0, len_km=0.0, presses=0, ok=False)
+        return dict(far_km=round(best[1], 2), near_km=round(best[0], 2), len_km=round(best[1] - best[0], 2),
+                    presses=best[2], ok=best[1] - best[0] >= ACQ_MIN_KM)
 
     def attack_options(self, seq, k, t, mode):
         """Cheapest attack bearings for seq[k] (a plain target): for each bearing the stretch
@@ -304,7 +349,7 @@ class Planner:
     def _attack_options(self, seq, k, t, mode):
         el = seq[k]
         ranked, blocked, failed = [], 0, []
-        sa14_before = self._sa14_blocked
+        sa14_before, acq_before = self._sa14_blocked, self._acq_blocked
         cands = []
         for b in np.arange(0, 360, self.P["attack_bearing_step_deg"]):
             piece = self.attack_piece(el, t, mode, float(b))
@@ -316,8 +361,11 @@ class Planner:
         ranked.sort(key=lambda r: r[:2])
         if not ranked:
             n14 = self._sa14_blocked - sa14_before
+            acq = self._acq_blocked - acq_before
             raise PlanError(f"{el['label']}: no usable attack bearing ({blocked} hit terrain"
                             + (f", the map edge or an SA-14 cell ({n14} of them SA-14)" if self.W.sa14_hard else " or the map edge")
+                            + (f", {acq} had no trackcam acquisition window (target not lockable by / and <= {ACQ_MAX_PRESSES} B "
+                               f"over {ACQ_MIN_KM:g} km of run-in)" if acq else "")
                             + f", {len(failed)} could not be routed" + (f", e.g. {failed[0]}" if failed else "") + ")")
         self.log.append(f"{el['role']} attack bearings by estimate: " + ", ".join(f"{b:.0f} ({c:.0f})" for c, b, _ in ranked[:6]))
         return [p for _, _, p in ranked[:int(self.P["attack_candidates"])]]
