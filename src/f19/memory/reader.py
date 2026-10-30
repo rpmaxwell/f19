@@ -331,6 +331,13 @@ def read_frame(db):
     return _u16(_peek(db, A.FRAME + find_offset(db), 2))
 
 
+def read_frame_fs(db):
+    """(frame counter ds:5520, frame scale ds:4EFC) in one round trip: what core.clock.FrameClock is fed."""
+    o = find_offset(db)
+    f, fs = _peek_many(db, [(A.FRAME + o, 2), (A.FRAME_SCALE + o, 2)])
+    return _u16(f), _u16(fs)
+
+
 def read_memory(db, lo=0, hi=0xA0000):
     """Guest memory [lo, hi) (all of conventional memory by default) in 64-byte PEEKs, 64 a round trip."""
     buf = bytearray()

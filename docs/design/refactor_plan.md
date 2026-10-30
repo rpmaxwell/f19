@@ -507,3 +507,14 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   the first goal) when the first attempt fails; rejoin searches are windowed to the part of the reference still ahead.
   Probed from t=744 and t=1374 of flight 1793113975 (tests/unit/pilot/test_director_liberec.py): the full mission routes.
 - Untested live. Not changed: the planner objective ignores the fuel margin; the director idles after a suppressed eject.
+
+## Cutover progress (2026-10-29)
+- Branch `planner-refactor` merged to `main` (fast suite 621 passed; goldens green); work continues on branch `cutover`.
+- `Controls`: DESIGNATE has no key; it is dropped and counted in `Controls.unsupported` instead of raising (no more runner crash path).
+- Zero-length legs: `Route.legs` keeps them (planner output), `FlyLeg` merges them as nav did. Documented, not changed.
+- **Game clock, measure-only (scope decided 2026-10-29).** `core.clock.FrameClock` derives game s and the game/wall ratio from ds:5520 and
+  ds:4EFC (`memory.reader.read_frame_fs`); the Runner feeds it every tick and logs `clock: game N.NNx real` every 120 s. Loops, behaviors and
+  `ts` are NOT switched: they still run on wall time and `time_mult` (which reads 1 while the game runs ~2.1-2.6x, as seen in the three replay
+  fixtures: 2.1-2.6). Replay key streams of all three fixtures are byte-identical to before; only the event files gain clock lines.
+  Still to decide, with live data: feed the measured ratio in as `ts`, or move every timer to game seconds.
+- Left: live flights (checklist a-h), then retiring the shims/legacy references.

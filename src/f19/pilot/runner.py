@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from f19.core.geometry import dist, wrap_deg as wrap
+from f19.core.clock import FrameClock
 from f19.core.types import Action, Frame
 from f19.core.units import K
 from f19.memory import reader as R
@@ -70,6 +71,8 @@ class Reads:
     def missile_world(self, full=True): return parse_missile_world(R.missile_world_memory(self.db, full))
 
     def time_mult(self): return R.read_time_mult(self.db)
+
+    def frame_fs(self): return R.read_frame_fs(self.db)
 
     def events(self): return R.read_events(self.db)
 
@@ -174,6 +177,7 @@ class Runner:
         self.event_list_s = event_list_s
         self.allow_eject = allow_eject
         self.dead = 0.0
+        self.game_clock, self._gc_log = FrameClock(), 0.0   # measures only; nothing flies on it (core.clock.FrameClock)
         self.phase_log = []
         self._ev_seen, self._ev_next = None, 0.0
         self._evl_next, self.event_list = 0.0, None
@@ -256,6 +260,14 @@ class Runner:
     def _event(self, now, text, events):
         self.phase_log.append(f"{now:.0f} {text}"); events.append(Event(now, text))
 
+    def _measure_clock(self, now, events):
+        try: frame, fs = self.reads.frame_fs()
+        except Exception: return                       # a replay source or a failed read: no measurement this tick
+        self.game_clock.feed(frame, fs, now)
+        r = self.game_clock.ratio
+        if r is not None and now >= self._gc_log:
+            self._gc_log = now + 120.0; self._event(now, f"clock: game {r:.2f}x real (game t {self.game_clock.gt:.0f} s)", events)
+
     def tick(self, now=None):
         now = self.clock.now() if now is None else now
         m, ctx = self.modes, self.ctx
@@ -275,6 +287,7 @@ class Runner:
         self.dead = 0.0
         state = dataclasses.replace(state, time_mult=self.reads.time_mult())
         events = []
+        self._measure_clock(now, events)
         self.controls.service(now)
         route = self.routes.current()
         if ctx.route is not route:                   # a new plan version (FlightDirector): FlyLeg joins it from its start
