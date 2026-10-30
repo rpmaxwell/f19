@@ -532,3 +532,8 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   first added power at 92 kt, the plane stalled (-33, -65, -90 ft/s) and hit the ground ~3 km short. Lesson: never drop to idle in the air
   unless the way back is a direct throttle command with a floor, and test it at altitude first. The height gate (go around above 160 ft within
   1 km of the aim point) and the sink-rate gate on the 30 ft idle are still on, not yet flown.
+- **Landing, 2026-10-30, later attempts:** (4) 246 kt, 641 ft, 9 km: the 12 ft/s sink limit never caught the glide line, the new height gate sent it around at 246 ft,
+  0.99 km short of the aim point (as designed). Fix: 18 ft/s sink limit while >80 ft above the line and above 150 ft (STEEP_VS). (5) 279 kt, 690 ft, 26 km: landed,
+  stopped 0.76 km past the base record (box ends ~1 km). Known weakness left in: the speed hold added power at 110 kt and overshot to 149 kt, so the plane crossed
+  the aim point at 45 ft and floated ~1.2 km; an idle rule past the aim point would fix it (user: not needed for now). The early-idle speed bleed stays OFF.
+  Landing constants in `pilot/phases/landing.py`: IDLE_ALT 30, GA_PAST_UNITS 80, HIGH_FT 160 / HIGH_KM 1.0, IDLE_SINK_MAX 10, STEEP_VS 18, BLEED_KT None.
