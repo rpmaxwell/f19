@@ -104,6 +104,7 @@ def test_landing_equivalent(egame, kind):
     w, after, old_thr = landing_world(**kw)
     fix = (FIX[0], 2 * BASE[1] - FIX[1]) if kw.get("south") else FIX
     old, new = ph.Landing(BASE, fix, ph.Throttle()), Landing(BASE, fix)
+    new.IDLE_ALT, new.GA_PAST_UNITS, new.LOG_GO_AROUND = 15, new.AIM_UNITS, False   # 2026-10-30 changes off: parity with scripts/phases.py
     old_thr[0] = old.thr
     rep = run_phase(old, new, ticks(w, 3000), old_step, extra=lambda b: (b.state, b.rwy, b.aim, getattr(b, "idled", False)), after=after)
     assert rep.all_equal, rep.first_diff
@@ -111,6 +112,34 @@ def test_landing_equivalent(egame, kind):
             "go_around_xtrack": ["approach", "final", "go-around"], "go_around_long": ["approach", "final", "go-around"]}[kind]
     assert rep.states == want and new.done, rep.states
     print(f"landing {kind}: {rep.ticks} ticks, {rep.n_keys} key events, all equal")
+
+
+def _landing_step(alt, km_past_base, xt=0.0, spd=140, flags=0x02):
+    """One Landing.step on short final, northbound: km_past_base > 0 = that far past the base record (aim is 48 units short)."""
+    from pilot_equiv import gamestate
+    from f19.core.types import Action, FlightContext
+    from f19.core.clock import ManualClock
+    w = world(x=BASE[0] + xt, y=BASE[1] - km_past_base * K, alt=alt, spd=spd, hdg=0.0, flags=flags, throttle=50)
+    ld = Landing(BASE, FIX); ld.state = "final"
+    cmd = ld.step(gamestate(w), FlightContext(ManualClock(0.0)))
+    return ld, cmd, Action
+
+
+def test_landing_idles_from_30_ft():
+    ld, cmd, A = _landing_step(alt=26, km_past_base=-0.5)         # 0.5 km short of the base record, 26 ft
+    assert A.THROTTLE_IDLE in cmd.actions and ld.idled and ld.state == "final"
+    ld, cmd, A = _landing_step(alt=40, km_past_base=-0.5)         # above 30 ft: power stays
+    assert A.THROTTLE_IDLE not in cmd.actions and not ld.idled
+
+
+def test_landing_goes_around_only_past_the_new_limit():
+    # the 2026-10-30 Leck float: 22 ft at the base record (48 units past the aim) used to go around; now it keeps trying
+    ld, cmd, _ = _landing_step(alt=22, km_past_base=0.0)
+    assert ld.state == "final" and not any("go-around" in e for e in cmd.events)
+    ld, cmd, _ = _landing_step(alt=22, km_past_base=0.6)         # 80+ units past the aim (0.75 km + 0.6 km): around
+    assert ld.state == "go-around" and any("landing go-around: 1.35 km past the aim point at 22 ft" in e for e in cmd.events)
+    ld, cmd, _ = _landing_step(alt=15, km_past_base=0.6)         # but a plane that is nearly down (<= 20 ft) is left to land
+    assert ld.state == "final"
 
 
 # ----------------------------------------------------------------------------------------------------------- attack

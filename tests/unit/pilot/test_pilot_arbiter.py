@@ -299,6 +299,13 @@ def _route(tmp_path):
     (d / "mission_mem.json").write_text(json.dumps(dict(theater="CE", targets=[dict(role="primary", x=10000, y=15000, record=7)])))
     return d / "route.json"
 
+@pytest.fixture(autouse=True)
+def _landing_parity(monkeypatch):
+    """The 2026-10-30 landing changes (idle from 30 ft, later go-around, a reason event) are off: parity with scripts/phases.py."""
+    from f19.pilot.phases import Landing
+    monkeypatch.setattr(Landing, "IDLE_ALT", 15); monkeypatch.setattr(Landing, "GA_PAST_UNITS", Landing.AIM_UNITS)
+    monkeypatch.setattr(Landing, "LOG_GO_AROUND", False)
+
 
 def _synthetic(tmp_path, args, strafe=(), n=400, dy=10.0, fuel_at=None):
     import pilot_equiv as PE

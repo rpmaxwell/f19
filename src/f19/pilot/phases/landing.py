@@ -24,7 +24,12 @@ class Landing:
     # flaps + final speed at 11 km (was 7): lowering them on the glide ballooned the plane to 544 ft at 6 km and it reached
     # the aim point at 120 ft -> go-around (2026-10-18)
     GEAR_KM, FLAPS_KM, FLARE_ALT, FLARE_VS, GA_XTRACK = 12.0, 11.0, 25, 4.0, 8
-    IDLE_ALT = 15                                  # power to idle below this (the float came from the speed hold adding power)
+    # Power to idle below IDLE_ALT (the float came from the speed hold adding power). 15 -> 30 ft (2026-10-30, Leck): at
+    # 143 kt and 50 % power the plane floated level at 22-24 ft past the aim point and never reached 15 ft.
+    # GA_PAST_UNITS: go around when more than this many units past the aim point and still above 20 ft (was AIM_UNITS = 48,
+    # i.e. at the base record; the runway box runs another 64 units past it, 2026-10-30).
+    IDLE_ALT, GA_PAST_UNITS = 30, 80
+    LOG_GO_AROUND = True                           # one event line with the reason (the old phases logged none)
     # Short final (2026-10-20 go-around): below GLIDE_ALT the hold flies a SINK RATE aimed at the touchdown point
     # (height / time to the aim point, at least MIN_SINK) with a GLIDE_DEADBAND ft/s deadband. And no power added below
     # GLIDE_ALT unless slower than NO_THR_UP_KT.
@@ -45,7 +50,7 @@ class Landing:
 
     def step(self, state, ctx):
         f, p, alt, spd, hdg = state.systems, state.xy, state.alt_ft, state.speed_kt, state.heading
-        acts, thr = [], SpeedIntent(ctx)
+        acts, events, thr = [], [], SpeedIntent(ctx)
         to_aim = (p[1] - self.aim[1]) * self.s / K               # km before the aim point (negative: past it)
         xt = p[0] - self.base[0] if self.s > 0 else self.base[0] - p[0]   # + = right of the centreline, units
         # One centreline law from intercept to touchdown: heading offset = -K * xt (units), capped 35 deg far out and
@@ -71,8 +76,11 @@ class Landing:
             if 0 < alt < self.IDLE_ALT and not self.idled:
                 thr.idle(acts); self.idled = True
             if alt == 0: thr.idle(acts); self.state = "rollout"
-            elif (to_aim < -self.AIM_UNITS / K and alt > 20) or (alt < 80 and abs(xt) > self.GA_XTRACK):
+            elif (to_aim < -self.GA_PAST_UNITS / K and alt > 20) or (alt < 80 and abs(xt) > self.GA_XTRACK):
                 thr.max(acts); self.state = "go-around"
+                why = (f"{-to_aim:.2f} km past the aim point at {alt:.0f} ft" if to_aim < -self.GA_PAST_UNITS / K
+                       else f"{xt:+.0f} units off the centreline at {alt:.0f} ft")
+                if self.LOG_GO_AROUND: events.append(f"landing go-around: {why}, {spd:.0f} kt")
         if self.state == "rollout":
             out.update(alt_hold=False, roll_hold=False)
             want_toggle(acts, state, Action.BRAKES_TOGGLE, True)
@@ -84,4 +92,4 @@ class Landing:
         out["banner"] = (f"  AUTO LANDING: {self.state}   aim {to_aim:5.2f} km   centreline {xt:+.0f} units (box +-5)"
                          f"   roll {state.att.roll:+.0f}   gear {'up' if f.flags & GEAR_UP else 'down'}"
                          f"   flaps {'down' if f.flags & FLAPS else 'up'}   box {f.rwy_box}")
-        return command_of(out, actions=acts, speed_kt=thr.speed_kt)
+        return command_of(out, events=events, actions=acts, speed_kt=thr.speed_kt)
