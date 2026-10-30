@@ -35,7 +35,10 @@ class Landing:
     # this above the target speed (resume the hold within RESUME_KT of it); HIGH_FT / HIGH_KM: go around when still above
     # HIGH_FT with HIGH_KM to the aim point left; IDLE_SINK_MAX: idle at IDLE_ALT only when sinking slower than this (ft/s),
     # else keep power down to LOW_IDLE_ALT. None switches each off.
-    BLEED_KT, RESUME_KT, HIGH_FT, HIGH_KM, IDLE_SINK_MAX, LOW_IDLE_ALT = 30, 12, 160, 1.0, 10.0, 15
+    # BLEED_KT is OFF (None): the first live try (2026-10-30, 252 kt at 11.6 km) cut the throttle to 0 and the speed hold, which adds power in
+    # small steps with pauses, only began adding it at 92 kt: stall, -90 ft/s, the plane hit the ground 3 km out. Do not switch it on
+    # without a power floor / a direct throttle command on the way back (and a test in the air at altitude).
+    BLEED_KT, RESUME_KT, HIGH_FT, HIGH_KM, IDLE_SINK_MAX, LOW_IDLE_ALT = None, 12, 160, 1.0, 10.0, 15
     LOG_GO_AROUND = True                           # one event line with the reason (the old phases logged none)
     # Short final (2026-10-20 go-around): below GLIDE_ALT the hold flies a SINK RATE aimed at the touchdown point
     # (height / time to the aim point, at least MIN_SINK) with a GLIDE_DEADBAND ft/s deadband. And no power added below

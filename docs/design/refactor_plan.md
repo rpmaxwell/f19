@@ -527,3 +527,8 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   touchdown ~0.5 km past the base record, stopped 0.79 km past it (box ends ~1 km). Idle at 30 ft may hurt a steep arrival: follow-up.
 - **TODO (user, 2026-10-30): end of flight.** `fly` exits at speed 0, which leaves the game paused on the runway (EGAME still running). A separate
   script should end the flight and go to the debrief screen. Not designed; needs the key / menu sequence for the debrief.
+- **Third Leck landing, 2026-10-30: crash caused by the early-idle speed bleed (landing.py BLEED_KT), now OFF.** 252 kt, 654 ft, 11.6 km out, gear and flaps
+  down. Throttle went to 0 on tick 1 and stayed there while speed fell 252 -> 98 kt (25 s); the incremental speed hold (5 % steps with pauses)
+  first added power at 92 kt, the plane stalled (-33, -65, -90 ft/s) and hit the ground ~3 km short. Lesson: never drop to idle in the air
+  unless the way back is a direct throttle command with a floor, and test it at altitude first. The height gate (go around above 160 ft within
+  1 km of the aim point) and the sink-rate gate on the 30 ft idle are still on, not yet flown.

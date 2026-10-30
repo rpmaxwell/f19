@@ -152,10 +152,18 @@ def _approach(ld, alt, km_before_base, spd, t, clock, flags=0x02):
     return ld.step(gamestate(w), FlightContext(clock))
 
 
-def test_landing_bleeds_speed_with_idle_then_resumes_the_hold():
+def test_landing_never_idles_for_speed_by_default():
     from f19.core.clock import ManualClock
     from f19.core.types import Action
     c = ManualClock(0.0); ld = Landing(BASE, FIX)
+    cmd = _approach(ld, 700, 15.0, 330, 0.0, c)                   # 330 kt on the approach: the hold alone (target 170), never idle
+    assert Action.THROTTLE_IDLE not in cmd.actions and not ld.bleeding and cmd.speed_kt == 170
+
+
+def test_landing_bleeds_speed_with_idle_then_resumes_the_hold():
+    from f19.core.clock import ManualClock
+    from f19.core.types import Action
+    c = ManualClock(0.0); ld = Landing(BASE, FIX); ld.BLEED_KT = 30                  # off by default since the 2026-10-30 stall
     cmd = _approach(ld, 700, 15.0, 260, 0.0, c)                   # 260 kt on the approach (target 170): idle at once
     assert Action.THROTTLE_IDLE in cmd.actions and ld.bleeding and cmd.speed_kt is None
     assert any("engine idle" in e for e in cmd.events)
