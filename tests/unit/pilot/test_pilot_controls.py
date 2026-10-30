@@ -82,7 +82,8 @@ def test_toggle_debounce_shared_and_throttle_clears_speed(egame):
     c.apply(Command(speed_kt=165.0), st, ctx); assert c.speed.target == 165.0
     c.apply(Command(actions=(Action.EJECT,)), st, ctx)
     assert emu.take() == [("scan", 0x44, True, 0.2)]                           # Shift+F10, the shifted-scancode path
-    with pytest.raises(ValueError): c.apply(Command(actions=(Action.DESIGNATE,)), st, ctx)
+    c.apply(Command(actions=(Action.DESIGNATE,)), st, ctx)                    # no key: dropped, counted, nothing sent
+    assert emu.take() == [] and c.unsupported == {Action.DESIGNATE: 1}
 
 
 def test_scheduled_hold_and_release_all(egame):
