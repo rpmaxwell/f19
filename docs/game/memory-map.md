@@ -455,6 +455,37 @@ None of it depends on the difficulty (the only variable is night, ds:4EF4 = 0 in
   Only difference found vs the cycling flight: ds:4EEA (weapon station) = 1 (camera) instead of 0. Needs a live probe (peek 5526 / 4EEA around one B).
 
 
+### Trackcam pick: implementation and re-check (2026-10-30)
+
+How established: re-read EGAME 0xab2c-0xacbc line by line while writing `src/f19/rules/trackcam.py`; replayed the rule on the
+three memlogs (tests/unit/rules/test_trackcam.py); read the key switch at 0xd63f. Day only; difficulty does not enter the rule.
+
+- **No disagreement** with the rule above. Details the code pins down: the current lock is always excluded (`record + 0x80 == ds:5526`);
+  the floor is `dist(lock) - 1` and a record needs `floor < dist`, i.e. dist >= the lock's, so records at the **same** distance as the lock
+  are reachable; ties between candidates go to the **lower index** (strict `best <= d` skip); the floor only applies while the lock is
+  inside the cone (`angle <= 0x2000` keeps it, the candidate test is `< 0x2000`); **air-to-air (mode 0) lets a record outside the cone
+  through when the floor is > 0** (0xac2e-0xac39), mode 2 never does. Called every frame unconditionally (0x4bf), nothing there depends
+  on the weapon station.
+- **B (0xd63f)** is just `or byte [5526], 0x80` and `or byte [5524], 0x80`. ds:5524 is a second, separate search (0xad3d-): range
+  `0x4B << (6 - night)` units, a sim-object (air) target; it does not touch ds:5526.
+- **The record table** (ds:80AA, ds:9500 = count = .WLD header word 1: CE 75, GULF 64, NC 46, LIBYA 37): record 0 = scratch (0,0 at the
+  start), 1 and 2 = the generated target slots, record k >= 3 = .WLD place k - 3 (memlog 1793126949: positions match for all 72 CE places).
+  The planner builds this table (`World.trackcam_records`); aircraft and destroyed state are not in it.
+- **Replay checks (rules module, memlogs 1793126949 / 1792724414 / 1793382037)**: record 44 alone in the cone with the wanted 2 at +97 deg
+  (`out_of_cone`); the in-cone set 2, 6, 34, 16, 38 steps 2 -> 6 -> 34 -> 16 -> 38 -> 2; every lock seen in that stretch is in the set.
+  1793382037 attack 2: ds:5526 = 7 (no pending bit), ds:9740 = 0x13, ds:94E0 = 0, cooldown 0, mode 2, station 1 in every snapshot for 40+ s;
+  the rule predicts 7 -> 1 after one B. **Still unexplained**; the probe `research/scripts/probe_trackcam_b.py` (taps B and reads ds:5526
+  every 50 ms, per station) was written but NOT run (needs the owner's go-ahead for a live flight). Untested: night, Elite, mode 0.
+- **Autopilot (Attack.TRACKCAM_LOOP)**: "/" verified on ds:9740 in (0x13, 0x19) and view 0, no B while `selectable()` is false, "/" or B by
+  the shorter predicted way, each key's result compared with the prediction (mismatch = logged with the candidate list; 2 = alternate
+  "/" and B at 2 s), repeating transitions = 10 s hold, 90 game s budget. Offline only so far: unit tests with a fake game and the memlog
+  replays above (no B while record 2 is out of the cone; "/" re-sent every >= 1 s while ds:9740 stays 0). Not flown.
+- **Planner**: each attack run-in must hold >= 3 km (ACQ_MIN_KM) where the target is inside 35 deg / 90 km (45 km at night) of the nose and
+  "/" + at most 8 B reach it; the run-in is lengthened by 2/4/6 km before a bearing is dropped; no bearing = PlanError. The window is in
+  route.json (run-in point `acq`) and report.txt. Records the planner cannot know (aircraft, scratch record 0 after an N press) can still
+  change the live count: the autopilot's check is the safety net.
+
+
 ## Flight-log variables: fuel, damage, clock, IDs, threats — EGAME (2026-10-18)
 
 Decoded from the EGAME disassembly for the flight logger. ds offsets; phys = 0x3BB70 + ds + find_offset (as f19_state).

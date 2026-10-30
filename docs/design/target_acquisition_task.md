@@ -1,6 +1,6 @@
 # Task: make trackcam target acquisition reliable (planner + autopilot)
 
-Instructions for an implementing agent. Status: NOT STARTED. Written 2026-10-30. Untracked on purpose; the owner decides when to commit it.
+Instructions for an implementing agent. Status: IMPLEMENTED 2026-10-30 (rules/trackcam.py, planner acquisition window, Attack closed loop; offline-tested, not flown; the station-1 probe is written, not run). Written 2026-10-30. Untracked on purpose; the owner decides when to commit it.
 
 ## Goal
 
