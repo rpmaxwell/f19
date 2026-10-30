@@ -537,3 +537,27 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   stopped 0.76 km past the base record (box ends ~1 km). Known weakness left in: the speed hold added power at 110 kt and overshot to 149 kt, so the plane crossed
   the aim point at 45 ft and floated ~1.2 km; an idle rule past the aim point would fix it (user: not needed for now). The early-idle speed bleed stays OFF.
   Landing constants in `pilot/phases/landing.py`: IDLE_ALT 30, GA_PAST_UNITS 80, HIGH_FT 160 / HIGH_KM 1.0, IDLE_SINK_MAX 10, STEEP_VS 18, BLEED_KT None.
+
+## Cutover steps 4 and 5: what was retired and what remains (2026-10-30)
+Step 4 ("delete the shims once nothing imports them") turned out much smaller than planned, because most "shims" are also the documented
+command-line tools, or are reached by tests through `tests/product.py`. An AST scan of every import (src, tests, scripts, analysis, research)
+and the docs found only two dead files. Deleted: `scripts/release_arrows.py` (-> `Emulator.release_arrows`, `Controls.after_load`) and
+`scripts/fix_after_load.py` (a one-off probe that used it). `tests/test_import_rules.py` already fails if anything under `src/` imports a legacy flat module.
+
+Remaining, and what blocks each (nothing here is imported by `src/`):
+
+| file(s) | what it is | blocker |
+|---|---|---|
+| `scripts/nav.py` | one-line shim for `f19.cli.fly` | the user's habit and 12 doc references; keep |
+| `scripts/phases.py`, `missile_watch.py`, `nav_tui.py` | frozen reference copies for the old-vs-new equivalence and replay tests | attack-acquisition work in progress by another agent; retire the parity tests first, then delete together with the `tests/unit/*/*_legacy.py` copies and `research/scripts/nav_legacy.py` |
+| `scripts/f19_state.py`, `read_mission.py`, `dosbox_automation.py` | re-exports of `f19.memory` / `f19.emulator` | `tests/unit/memory/*_legacy.py`, `test_automation.py` and ~17 research scripts import them |
+| `analysis/radar_game.py`, `missile_game.py` | re-exports plus the memlog check code (`radar_game.py check`, `missile_game.py check|replay`) | the check code is not in the package yet; tests reach them through `tests/product.py` |
+| `analysis/territory.py`, `theaters.py`, `memlog_load.py`, `fuel_log.py` | re-exports / real log tools | `tests/product.py`, `tests/unit/*`, `scripts/` |
+| `analysis/ordnance.py`, `release_geometry.py`, `terrain_3d.py`, `unexepack.py`, `mission_catalog.py`, `parse_theater.py`, `fuel_model.py` | thin CLIs over `f19.rules` / `f19.gamedata` | documented tools (CLAUDE.md, docs/game); would need `python -m f19...` entry points first |
+| `analysis/planner/*` | `python analysis/planner <dir>` and the checks | `tests/product.py` loads `plan.py` and `checks.py` from there; `checks.py` is being edited by another agent |
+| `scripts/mission_finder.py`, `gun_probe.py`, `missile_replay.py`, `plan_bench.py`, `compare_objectives.py`, `build_roster.py`, `alt_schedule.py`, `unstick_keys.py` | real tools, not shims | stay (unstick_keys waits for a live memory check) |
+
+Suggested order for what is left: (1) move the memlog check code from `radar_game.py` / `missile_game.py` into `f19.telemetry` / tests and point
+`tests/product.py` at `f19.*`; (2) give the `analysis/` CLIs `python -m f19...` entry points and delete the wrappers; (3) retire the parity tests
+and reference copies once attack acquisition has landed; (4) migrate or drop the research scripts' flat imports. Each step is a pure move with the
+existing tests as the oracle.
