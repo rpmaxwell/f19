@@ -64,3 +64,4 @@ def single_frame_photo(monkeypatch):
     try: from f19.pilot.phases.attack import Attack
     except ImportError: return
     monkeypatch.setattr(Attack, "CONFIRM_PHOTO", False); monkeypatch.setattr(Attack, "CLEAR_PASS", False)
+    monkeypatch.setattr(Attack, "TRACKCAM_LOOP", False)     # the blind "/" + B x 40 of scripts/phases.py; tests/unit/pilot/test_pilot_acquire.py has the loop

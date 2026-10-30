@@ -377,6 +377,7 @@ class RoutePoint:
     alt_ft: int | None = None
     probe: str | None = None
     loiter: str | None = None
+    acq: dict | None = None              # run-in point: trackcam acquisition window (far_km, near_km, len_km, presses, ok)
 
     @property
     def xy(self): return self.x, self.y

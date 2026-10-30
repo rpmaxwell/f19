@@ -198,6 +198,11 @@ def report(pl, best, results, summ, sim):
             mode, why = pl.attack_mode(t)
             L.append(f"  {role}: {t['object']} {t['place']} -> {mode} ({why})")
         L += [f"  {l}: {a['action']}" for p, l, a in best["pts"] if l and a.get("action")]
+        for p, l, a in best["pts"]:
+            if a.get("acq"):
+                q = a["acq"]
+                L.append(f"  {l}: trackcam lock window {q['far_km']:g}-{q['near_km']:g} km before the target ({q['len_km']:g} km), "
+                         f"\"/\" then <= {q['presses']} B ({'night' if pl.W.night else 'day'}; the pick rule does not depend on the difficulty)")
     L += ["", "CHECKS: " + ("all passed" if not best["errors"] else "FAILED")] + [f"  !! {e}" for e in best["errors"]]
     notes = sorted(pl.router.notes)
     if best["log"] or pl.log or notes: L += ["", "planner log:"] + [f"  {m}" for m in notes + pl.log + best["log"]]

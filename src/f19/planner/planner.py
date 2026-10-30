@@ -362,7 +362,7 @@ class Planner:
         if not ranked:
             n14 = self._sa14_blocked - sa14_before
             acq = self._acq_blocked - acq_before
-            raise PlanError(f"{el['label']}: no usable attack bearing ({blocked} hit terrain"
+            raise PlanError(f"{el['label']}: no usable attack bearing ({blocked - acq} hit terrain"
                             + (f", the map edge or an SA-14 cell ({n14} of them SA-14)" if self.W.sa14_hard else " or the map edge")
                             + (f", {acq} had no trackcam acquisition window (target not lockable by / and <= {ACQ_MAX_PRESSES} B "
                                f"over {ACQ_MIN_KM:g} km of run-in)" if acq else "")
@@ -469,8 +469,12 @@ class Planner:
             yield seq, desc
 
     def attack_checks(self, pts):
-        """Each Maverick launch: arriving straight at the target (within MAV_HALF_ANGLE) inside the launch window."""
+        """Each run-in has a trackcam acquisition window; each Maverick launch: arriving straight at the target (within MAV_HALF_ANGLE) inside the launch window."""
         errs = []
+        for p, l, a in pts:
+            if a.get("kind") == "runin" and a.get("acq") and not a["acq"]["ok"]:
+                errs.append(f"{l}: no trackcam acquisition window (best {a['acq']['len_km']:g} km, need {ACQ_MIN_KM:g} km "
+                            f"with <= {ACQ_MAX_PRESSES} B presses): the target may not lock")
         for i, (p, l, a) in enumerate(pts):
             if a.get("kind") != "launch" or i == 0: continue
             t = next(t for t in self.M["targets"] if t["role"].rstrip("?") == a["role"])

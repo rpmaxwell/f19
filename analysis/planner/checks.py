@@ -14,7 +14,8 @@ sys.path[:0] = [str(HERE.parent), str(HERE.parents[1] / "src")]   # radar_game (
 import numpy as np  # noqa: E402
 import radar_game as rg  # noqa: E402
 from f19.rules import fuel as fuel_model  # noqa: E402
-from f19.planner import fuelplan, profiles  # noqa: E402
+from f19.planner import fuelplan, planner as plmod, profiles  # noqa: E402
+from f19.rules import trackcam as tc  # noqa: E402
 
 FAIL = []
 
@@ -82,6 +83,23 @@ def main():
     transit = 2 * 75 * reg.pick(False, 9000, 300).lb_km
     samples = (10000 - transit - 1000) / 64
     check("R9 paper example ~117 samples (75 km each way)", 105 <= samples <= 125, f"transit {transit:.0f} lb, {samples:.0f} samples")
+
+    # 5. trackcam acquisition (rules.trackcam, EGAME 0xab84-0xacbc; the pick does not depend on the difficulty, only on night).
+    #    A target dead ahead is the nearest record in the cone: "/" alone locks it. Eight nearer records in the cone push it past
+    #    the planner's ACQ_MAX_PRESSES; the cone / range margins are the planner's.
+    K_ = 64
+    me, T_ = (0.0, 20000.0), (0.0, 20000.0 - 16 * K_)
+    near = [(10 + i, 0.0 + 30 * i, 20000.0 - (3 + i) * K_, 0) for i in range(plmod.ACQ_MAX_PRESSES + 1)]
+    for night in (0, 1):
+        c = tc.candidates(me, 0, 0, night, [(50, *T_, 0)], 2)
+        check(f"trackcam: dead-ahead target is the nearest ({'night' if night else 'day'})", tc.slash_then_presses(50, c) == tc.Plan(True, 0))
+        c = tc.candidates(me, 0, 0, night, near + [(50, *T_, 0)], 2)
+        n = tc.slash_then_presses(50, c)
+        check(f"trackcam: {len(near)} nearer records in the cone exceed {plmod.ACQ_MAX_PRESSES} presses ({'night' if night else 'day'})",
+              n is not None and n.presses > plmod.ACQ_MAX_PRESSES, f"{n}")
+    check("trackcam: 60 km is in range by day, not at night (50 km cap)",
+          tc.acquisition_ok(me, 0, (0.0, 20000 - 60 * K_), 0) and not tc.acquisition_ok(me, 0, (0.0, 20000 - 60 * K_), 1))
+    check("trackcam: planner margin is tighter than the game's 45 deg cone / 100 km", tc.SAFE_CONE_DEG < tc.CONE_DEG and tc.SAFE_RANGE_KM_DAY < tc.range_km(0))
 
     print(f"\n{'all checks passed' if not FAIL else f'{len(FAIL)} FAILED: ' + '; '.join(FAIL)}")
     sys.exit(1 if FAIL else 0)

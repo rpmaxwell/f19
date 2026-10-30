@@ -11,6 +11,12 @@ import product
 
 # name -> detail printed by the baseline code (None: the check prints no detail)
 EXPECTED = {
+    "trackcam: dead-ahead target is the nearest (day)": None,
+    "trackcam: dead-ahead target is the nearest (night)": None,
+    "trackcam: 9 nearer records in the cone exceed 8 presses (day)": "Plan(slash=True, presses=9)",
+    "trackcam: 9 nearer records in the cone exceed 8 presses (night)": "Plan(slash=True, presses=9)",
+    "trackcam: 60 km is in range by day, not at night (50 km cap)": None,
+    "trackcam: planner margin is tighter than the game's 45 deg cone / 100 km": None,
     "site_return_np == site_return (20k random inputs)": None,
     "SA-11 side-on (FINDINGS 50 km)": "45.5 km with > 100 (the game), 50.5 km with >= 100 (the table)",
     "SA-2 flying at/away: never (FINDINGS -)": None,

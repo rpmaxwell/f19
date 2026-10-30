@@ -56,7 +56,8 @@ _NOTE = "  no corridor with the "          # a router note per leg that needed t
 
 
 def _plan_lines(lines):
-    return [l for l in lines if not l.startswith(_OPTION_LINES + (_NOTE,))]
+    # "trackcam lock window" lines: added 2026-10-30 (acquisition window of each run-in); the route itself is unchanged
+    return [l for l in lines if not l.startswith(_OPTION_LINES + (_NOTE,)) and "trackcam lock window" not in l]
 
 
 def _same(a, b, path=""):
@@ -89,7 +90,8 @@ def test_golden_replan(name, tmp_path):
     print(f"{name}: planned in {secs:.0f} s")
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-4000:]
     diffs = _same(json.loads((d / "route.json").read_text()), json.loads((src / "route.json").read_text()), "route")
-    diffs = [x for x in diffs if not (x.endswith("only in new") and x.split(":")[0] in NEW_KEYS)]
+    diffs = [x for x in diffs if not (x.endswith("only in new") and (x.split(":")[0] in NEW_KEYS or x.endswith(".acq: only in new")))]
+    # 2026-10-30: the run-in point of each attack carries "acq" (trackcam acquisition window); nothing else in the route moved
     if name in SOFT:        # the alert simulation now lets an SA-14 launch raise the sites' alerts: expected radar IDs 5.60 vs 5.69
         diffs = [x for x in diffs if not x.startswith("route.summary.alert.")]
     assert not diffs, f"{len(diffs)} differences, first: {diffs[:10]}"
