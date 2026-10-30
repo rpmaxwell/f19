@@ -24,6 +24,7 @@ import sys
 import time
 from pathlib import Path
 
+from f19.cli.gameworld import GameWorld
 from f19.core.clock import ManualClock, WallClock
 from f19.core.geometry import bearing_deg, dist, wrap_deg
 from f19.core.settings import settings as S
@@ -61,18 +62,6 @@ class RecordingEmulator:
 
 
 # ------------------------------------------------------------------------------------------------------ helpers
-class _World:
-    """f19.memory.mission.World over the game's .WLD files (read_mission.World)."""
-    def __init__(self):
-        from f19.rules.radar import radar_systems
-        self.R = radar_systems()
-    def wld_bytes(self, th):
-        try: return wld.wld_bytes(th)
-        except OSError: return None
-    def names(self, th): return wld.places(th)["names"]
-    def radar(self, kind): return self.R.get(kind)
-
-
 def _json(p):
     try: return json.loads(Path(p).read_text())
     except (OSError, ValueError): return None
@@ -341,7 +330,7 @@ def check_route(args, reader, s0, world=None, say=print):
         planned = json.loads(mm.read_text())
         # memory can hold more than one mission copy, including a stale one with the same place names (2026-10-15):
         # accept the route if any copy matches it
-        copies = MM.parse_all(reader.memory(), planned.get("theater", "NC"), world=world or _World())
+        copies = MM.parse_all(reader.memory(), planned.get("theater", "NC"), world=world or GameWorld())
         live_ = next((c for c in copies if key(c) == key(planned)), copies[-1] if copies else {"targets": []})
         if key(live_) != key(planned):
             match = []

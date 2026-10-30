@@ -12,9 +12,9 @@ whether keys work again.
 """
 import sys, time
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
-from f19_state import read_sensitivity
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))   # until `uv run` finds the package
+from f19.emulator import Emulator as Dosbox
+from f19.memory.reader import read_sensitivity
 
 
 def keys_work(db, settle=1.0):

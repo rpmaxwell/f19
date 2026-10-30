@@ -22,3 +22,7 @@ Conventional memory (0-0xA0000) dumped via `emu.read`, to `F19_DATA/dumps/menu/`
 - `debrief_map.bin`: 2 s after one `enter` on the summary screen: the debrief map screen (flight summary map with an
   "exit debrief" option). Not yet user-confirmed. Per the user, the cursor may need `down` before `enter` selects
   "exit debrief" (returns to the roster page); not yet tried.
+  User-confirmed (screenshot): "Mission Debriefing" map, right panel lists a mission event ("Press Selector for next
+  mission event"), then "Review Mission" (highlighted at entry) and "Exit Debriefing".
+- `debrief_map_down.bin`: after one `down` on the debrief map. `roster.bin`: 2.5 s after `enter` following that
+  `down` (expected: Exit Debriefing -> roster page; to be confirmed by the user).

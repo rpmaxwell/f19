@@ -111,7 +111,7 @@ def with_data(monkeypatch, module, data):
 
 @pytest.mark.parametrize("src", ["written", "stored"])
 def test_memlog_load_reads_output(src, request, monkeypatch):
-    import memlog_load
+    from f19.telemetry import memlog_load
     data = request.getfixturevalue(src)
     for run in RUNS:
         with_data(monkeypatch, memlog_load, FIX)

@@ -21,16 +21,16 @@ Complete"). START's cursor variables are not known yet (TODO in f19.memory.addre
 """
 import argparse, sys, time
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(1, str(Path(__file__).resolve().parent.parent / "analysis"))
-import read_mission as rm  # noqa: E402
-import theaters  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))   # until `uv run` finds the package
+from f19.cli.gameworld import GameWorld  # noqa: E402
+from f19.core.settings import settings as _S  # noqa: E402
+from f19.gamedata import wld as theaters  # noqa: E402
 from f19.gamedata.mission_gen import (  # noqa: E402,F401
     BUCKETS, COMM_PTR, FUEL_EST, LEVELS, NEW_FLAG, NEW_MISSION, NEW_MISSION_RET, AFTER_GENERATE, AFTER_GENERATE_END,
     OPPONENTS, PILOT_FLAGS, PILOT_LEVEL, PILOT_OPP, PILOT_THEATER, SEED, TASKS, THEATER_CODE, Generator, Spec, block_key,
     bucket, decode, describe, find_seed, key, predict, select_by_seed, survey, verify_image)
 
-GAME = theaters.GAME
+GAME = _S.game_dir
 
 
 def next_steps(a, seed, selected=False):
@@ -83,7 +83,7 @@ def main():
     else:
         from f19.emulator import Emulator
         from f19.memory import MemoryReader
-        emu = Emulator(); reader = MemoryReader(emu, rm.WORLD)
+        emu = Emulator(); reader = MemoryReader(emu, GameWorld())
         mem = reader.memory()
     try:
         gen = Generator(mem)

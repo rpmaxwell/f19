@@ -4,7 +4,7 @@ Positions: "units" are waypoint-table units, 64 per km (player position ds:94EE 
 0x451B8 is 2048 per km). Y grows south. Territory / terrain-type / SA-14 cells are 32 km = 2048 units, cell = x >> 11,
 16 x 16 cells per theater (analysis/territory.py). The planner's search grid is 2 km (planner/world.py CELL_KM).
 Angles: 65536 = 360 deg, 0 = north, clockwise (ds:46DA heading; pitch/roll are signed s16).
-Speed: map distance per game s is GROUND_PER_KT x the indicated airspeed (16 logged flights, analysis/fuel_log.py,
+Speed: map distance per game s is GROUND_PER_KT x the indicated airspeed (16 logged flights, python -m f19.cli.fuel_log,
 2026-10-21). Clock: one game-clock tick (ds:6630) = 2 game s; event-list cells are x >> 7, y >> 7.
 """
 
@@ -21,7 +21,7 @@ PLAN_CELL_UNITS = PLAN_CELL_KM * K
 EVENT_CELL_SHIFT = 7         # flight-event list stores x >> 7, y >> 7 (f19_state.read_event_list)
 
 KT_KMH = 1.852               # km/h per knot (a plain unit, NOT the planner's world.KT_KMH: see GROUND_KMH_PER_KT)
-GROUND_PER_KT = 0.788        # ground speed / indicated airspeed (planner/world.py, analysis/fuel_log.py)
+GROUND_PER_KT = 0.788        # ground speed / indicated airspeed (planner/world.py, python -m f19.cli.fuel_log)
 GROUND_KMH_PER_KT = KT_KMH * GROUND_PER_KT     # = planner/world.py KT_KMH (map km per game hour per indicated kt)
 FT_PER_M = 3.28084
 CLOCK_TICK_S = 2             # game s per clock tick (ds:6630)

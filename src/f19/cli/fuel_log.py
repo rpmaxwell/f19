@@ -5,25 +5,25 @@ The planner predicts fuel from the throttle it plans; nav flies a speed hold tha
 airspeed in map distance per game-clock second. This keeps a record of what each flight really did, so the
 planner's numbers (planner/world.GROUND_PER_KT, the throttle mix it assumes) can be refit from many flights.
 
-  fuel_log.py <memlog dir>      log one flight -> logs/fuel/<id>.json, and its row in logs/fuel/flights.jsonl
-  fuel_log.py all               every logs/memlog/* flight not logged yet
-  fuel_log.py summary           pooled numbers over all logged flights (what the planner should assume)
+  python -m f19.cli.fuel_log <memlog dir>      log one flight -> logs/fuel/<id>.json, and its row in logs/fuel/flights.jsonl
+  python -m f19.cli.fuel_log all               every logs/memlog/* flight not logged yet
+  python -m f19.cli.fuel_log summary           pooled numbers over all logged flights (what the planner should assume)
 
 Per flight: every throttle-setting change (game s since takeoff, from -> to, kt, alt, fuel, flaps), the time
 share of each setting, airborne game minutes, fuel used (measured) vs the burn rule's prediction from the
-throttle time (fuel_model.burn_step), distance flown, mean indicated kt and the ground/indicated ratio.
-Memory offsets (ds, file index = ds - 0x490) as analysis/radar_game.py; FINDINGS.md "Flight-log variables".
+throttle time (f19.rules.fuel.burn_step), distance flown, mean indicated kt and the ground/indicated ratio.
+Memory offsets (ds, file index = ds - 0x490) as f19.rules.radar; FINDINGS.md "Flight-log variables".
 """
-import sys as _sys; from pathlib import Path as _P
-_sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the package move
-from f19.core.settings import settings as S  # noqa: E402
-import glob, json, math, struct, sys
+import glob
+import json
+import math
+import struct
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fuel_model import burn_step  # noqa: E402
+from f19.core.settings import settings as S
+from f19.rules.fuel import burn_step
 
 OUT = S.logs / "fuel"
 CLOCK, FUEL, THR, ALT, KT27, PX, PY, FLAGS = 0x6630, 0x4ED0, 0x46F2, 0x46E0, 0x7F94, 0x94EE, 0x94FE, 0x684C

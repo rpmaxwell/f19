@@ -73,7 +73,7 @@ DEFAULTS = dict(
     transit_flaps="auto",
     burn_factor=1.0,           # planned burn x this (nav_lb_min below already is the measured burn)
     # nav flies one held airspeed (profile cruise_kt) and moves the throttle to keep it, so plan THAT: every step at
-    # nav_hold_kt, burning the measured nav_lb_min. 18 logged flights (analysis/fuel_log.py summary, 2026-10-21):
+    # nav_hold_kt, burning the measured nav_lb_min. 18 logged flights (python -m f19.cli.fuel_log summary, 2026-10-21):
     # 62.1 lb/min pooled, 191 kt mean. None = the fuel model's speed for the planned throttle (when nav flies per-leg
     # throttle). Refit both from the summary as flights accumulate.
     nav_hold_kt=190.0,

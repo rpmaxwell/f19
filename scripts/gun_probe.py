@@ -13,9 +13,9 @@ _sys.path.insert(0, str(_P(__file__).resolve().parents[1] / "src"))  # until the
 from f19.core.settings import settings as S  # noqa: E402
 import argparse, csv, math, struct, sys, time
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
-from f19_state import find_offset, _peek_many, DS, GUN_ROUNDS, OPP
+from f19.emulator import Emulator as Dosbox
+from f19.memory.addresses import DS, GUN_ROUNDS, OPP
+from f19.memory.reader import _peek_many, find_offset
 
 ALT, HDG, PITCH = DS + 0x46E0, DS + 0x46DA, DS + 0x46DC     # ft, 65536 = 360 deg
 UNITS_XY = DS + 0x94EE                                       # player X (u16, 64/km); Y at +0x10 (ds:94FE)

@@ -66,7 +66,7 @@ runs the whole plan. Both assert the error: when the bug is fixed (plan section 
 | 1792546698 | 1792546685 | ce_test_1019_2337 | photo + Maverick attacks, 10 SA-14 launches, flare | 313 of 2657 (2 windows) |
 | 1792715432 | 1792715419 | ce_stupsk_1022_2025 | takeoff, fighter evasion (MiG-31, IL-76), AA-9 / SA-10 missiles, Elite | all 787 |
 
-Nav log = nearest epoch, as `memlog_load.py` / `missile_replay.py` pick it; route = the plan dir whose route matches
+Nav log = nearest epoch, as `f19.telemetry.memlog_load` / `missile_replay.py` pick it; route = the plan dir whose route matches
 the flown track and was written just before the flight.
 
 ## The replay harness (`replay/harness.py`)

@@ -8,7 +8,7 @@ API: `for frame in source: ...`, then `source.close()`.
   LiveSource     a sink (register it on the TelemetryBus) that a consumer iterates; bounded, drops when full
 
 Nearest-epoch matching (nearest_epoch): a memlog run and its nav log have different ids (nav opens its CSV at start,
-MemLog its directory ~12 s later after connecting); memlog_load.py and missile_replay.py pair them by the nearest
+MemLog its directory ~12 s later after connecting); f19.telemetry.memlog_load and missile_replay pair them by the nearest
 nav CSV epoch, unbounded. Here the same rule, with an optional bound.
 """
 import csv

@@ -29,7 +29,7 @@ AIRBASE_FLAG = 1025      # .WLD record flags[0] of an airbase
 # two-minute windows, p10-p90 0.774-0.795; the 2 s clock tick and 64 units per km as elsewhere). Every
 # knots -> time / distance conversion in the planner uses this: flight time, fuel, samples, pulses per km.
 # Before it the plans ran ~25 % short on time and fuel (flown: 104 game min, 6332 lb; planned 80 min, 4786 lb).
-GROUND_PER_KT = units.GROUND_PER_KT       # 0.788, pooled over 16 logged flights (analysis/fuel_log.py summary), 2026-10-21
+GROUND_PER_KT = units.GROUND_PER_KT       # 0.788, pooled over 16 logged flights (python -m f19.cli.fuel_log summary), 2026-10-21
 GROUND_KMH_PER_KT = units.GROUND_KMH_PER_KT   # map km per game hour per indicated kt (1.852 x 0.788)
 KT_KMH = GROUND_KMH_PER_KT                # the old name (NOT km/h per kt: ground km/h per indicated kt)
 
