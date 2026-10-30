@@ -41,7 +41,7 @@ def next_steps(a, seed, selected=False):
         print(f"  1. game on START's options menu, 'Select New Mission' highlighted, then pokes seed {seed:#010x} and deals it:\n"
               f"       uv run --group missions python scripts/mission_finder.py {rerun}")
     print(f"  {'1' if selected else '2'}. at the briefing: plan it (writes <plan>/route.json):\n"
-          "       uv run python analysis/planner/new_plan.py --extra-fuel 1")
+          "       uv run python -m f19.planner.new_plan --extra-fuel 1")
     print(f"  {'2' if selected else '3'}. fly it (see docs/design/first_flight_checklist.md; stop with Ctrl-C):\n"
           "       uv run python -m f19.cli.fly --route <plan>/route.json --auto --hdg --alt <cruise_ft> --director --memlog")
 

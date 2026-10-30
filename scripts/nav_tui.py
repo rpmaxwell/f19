@@ -32,7 +32,7 @@ import f19_state as fs
 import radar_game as rg
 from fuel_model import burn_step, STEPS_PER_MIN
 from territory import grid as tgrid
-from planner.score import estimate as score_estimate
+from f19.rules.scoring import estimate as score_estimate
 from read_mission import RADAR as RADAR_SYSTEMS        # radar type -> (system, P/D, missile range km)
 
 K = 64.0                       # waypoint units per km
