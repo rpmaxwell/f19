@@ -105,6 +105,7 @@ def test_landing_equivalent(egame, kind):
     fix = (FIX[0], 2 * BASE[1] - FIX[1]) if kw.get("south") else FIX
     old, new = ph.Landing(BASE, fix, ph.Throttle()), Landing(BASE, fix)
     new.IDLE_ALT, new.GA_PAST_UNITS, new.LOG_GO_AROUND = 15, new.AIM_UNITS, False   # 2026-10-30 changes off: parity with scripts/phases.py
+    new.BLEED_KT, new.HIGH_FT, new.IDLE_SINK_MAX = None, None, None
     old_thr[0] = old.thr
     rep = run_phase(old, new, ticks(w, 3000), old_step, extra=lambda b: (b.state, b.rwy, b.aim, getattr(b, "idled", False)), after=after)
     assert rep.all_equal, rep.first_diff
@@ -140,6 +141,50 @@ def test_landing_goes_around_only_past_the_new_limit():
     assert ld.state == "go-around" and any("landing go-around: 1.35 km past the aim point at 22 ft" in e for e in cmd.events)
     ld, cmd, _ = _landing_step(alt=15, km_past_base=0.6)         # but a plane that is nearly down (<= 20 ft) is left to land
     assert ld.state == "final"
+
+
+def _approach(ld, alt, km_before_base, spd, t, clock, flags=0x02):
+    """Step an existing Landing at km_before_base (km short of the base record), advancing the clock to t."""
+    from pilot_equiv import gamestate
+    from f19.core.types import FlightContext
+    w = world(x=BASE[0], y=BASE[1] + km_before_base * K, alt=alt, spd=spd, hdg=0.0, flags=flags, throttle=50)
+    clock.set(t)
+    return ld.step(gamestate(w), FlightContext(clock))
+
+
+def test_landing_bleeds_speed_with_idle_then_resumes_the_hold():
+    from f19.core.clock import ManualClock
+    from f19.core.types import Action
+    c = ManualClock(0.0); ld = Landing(BASE, FIX)
+    cmd = _approach(ld, 700, 15.0, 260, 0.0, c)                   # 260 kt on the approach (target 170): idle at once
+    assert Action.THROTTLE_IDLE in cmd.actions and ld.bleeding and cmd.speed_kt is None
+    assert any("engine idle" in e for e in cmd.events)
+    cmd = _approach(ld, 690, 14.0, 230, 1.0, c)                   # still hot: nothing re-sent
+    assert Action.THROTTLE_IDLE not in cmd.actions and ld.bleeding and cmd.speed_kt is None
+    cmd = _approach(ld, 650, 13.0, 178, 2.0, c)                   # within RESUME_KT of the target: the hold is back
+    assert not ld.bleeding and cmd.speed_kt == 170
+
+
+def test_landing_goes_around_when_still_high_on_short_final():
+    ld, cmd, _ = _landing_step(alt=200, km_past_base=-1.2)          # 0.45 km to the aim point at 200 ft
+    assert ld.state == "go-around" and any("too high on short final: 200 ft" in e for e in cmd.events)
+    ld, cmd, _ = _landing_step(alt=120, km_past_base=-1.2)          # at 120 ft it carries on
+    assert ld.state == "final"
+    ld, cmd, _ = _landing_step(alt=200, km_past_base=-3.0)          # 2.25 km to the aim point: still time to descend
+    assert ld.state == "final"
+
+
+def test_landing_keeps_power_below_30_ft_while_sinking_fast():
+    from f19.core.clock import ManualClock
+    from f19.core.types import Action
+    c = ManualClock(0.0); ld = Landing(BASE, FIX); ld.state = "final"
+    _approach(ld, 45, 0.9, 130, 0.0, c); cmd = _approach(ld, 28, 0.8, 130, 1.0, c)   # 17 ft in 1 s: too fast to cut the power
+    assert Action.THROTTLE_IDLE not in cmd.actions and not ld.idled
+    cmd = _approach(ld, 14, 0.6, 130, 2.0, c)                                       # but below 15 ft it idles regardless
+    assert Action.THROTTLE_IDLE in cmd.actions and ld.idled
+    c = ManualClock(0.0); ld = Landing(BASE, FIX); ld.state = "final"
+    _approach(ld, 34, 0.9, 130, 0.0, c); cmd = _approach(ld, 28, 0.8, 130, 1.0, c)   # 6 ft/s: idle at 28 ft
+    assert Action.THROTTLE_IDLE in cmd.actions and ld.idled
 
 
 # ----------------------------------------------------------------------------------------------------------- attack

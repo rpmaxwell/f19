@@ -78,6 +78,17 @@ class Systems:
     ir_jammer = property(lambda s: bool(s.flags & IRJ))
 
 
+@dc
+class TrackcamView:
+    """What the B / "/" target pick depends on (reader.read_trackcam_view; rules.trackcam)."""
+    screen: int = 0                      # ds:9740 (0x13 / 0x19 = trackcam screens)
+    view: int = 0                        # ds:9E8C view offset (u16, 0x4000 = 90 deg)
+    night: int = 0                       # ds:4EF4
+    flags: int = 0                       # ds:94E0 (bit 0x80 blocks B)
+    cooldown: int = 0                    # ds:8B22
+    records: tuple = ()                  # (index, x, y, flags) of every record the search walks (ds:80AA, ds:9500 of them)
+
+
 class ThreatKind(Enum):
     SITE = "site"            # target record with a radar type (f19_state.read_site_records)
     AIRCRAFT = "aircraft"    # sim-object slot (read_aircraft)
@@ -140,6 +151,7 @@ class GameState:
     events: tuple | None = None          # flight-event records (type, flags, target, time) (read_events)
     projectiles: tuple = ()              # player projectile slots 8-11 in order: (spec u16 +0x10, ttl u16 +0x0E) (read_projectiles)
     target_records: tuple = ()           # (record, x, y, destroyed) target-table records the reader was asked for (read_target)
+    cam: TrackcamView | None = None      # trackcam selection inputs (Reads.enrich(cam=True)); None = not read
     frame_scale: int | None = None       # ds:4EFC frames per 2 s tick (read_gun fs)
     gun_slots: int | None = None         # bullet slots in use (read_gun nslots); rounds = systems.gun_rounds
     missile_world: Any = field(default=None, compare=False, repr=False)   # missile_game.parse() dict (MissileWatch's snap)

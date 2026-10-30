@@ -19,7 +19,7 @@ import struct
 import time
 from pathlib import Path
 
-from f19.core.types import GameState, Mission
+from f19.core.types import GameState, Mission, TrackcamView
 from f19.core.units import CLOCK_TICK_S
 from f19.memory import addresses as A
 from f19.memory import mission as M
@@ -201,6 +201,19 @@ def read_flight(db):
 
 def read_trackcam(db):
     return _peek(db, A.TRACKCAM_MODE + find_offset(db), 1)[0]
+
+
+def read_trackcam_view(db):
+    """TrackcamView: screen id, view offset, night, B-blocked flags, cooldown and every record the B search walks
+    (ds:9500 of them, 16 B each: ~1.2 KB in one pipelined batch)."""
+    o = find_offset(db)
+    head = _peek_many(db, [(A.CAM_SCREEN + o, 2), (A.CAM_VIEW + o, 2), (A.NIGHT + o, 2), (A.CAM_FLAGS + o, 2),
+                           (A.CAM_COOLDOWN + o, 2), (A.N_SEARCHED + o, 2)])
+    screen, view, night, flags, cool, n = (_u16(h) for h in head)
+    n = min(n, 255)
+    raw = b"".join(_peek_many(db, _r_records(o, n)))
+    recs = tuple((k, *struct.unpack_from("<HH", raw, 16 * k + 2), raw[16 * k + 8]) for k in range(n))
+    return TrackcamView(screen, view, night, flags, cool, recs)
 
 
 def read_aircraft(db):

@@ -54,9 +54,10 @@ class Reads:
     @property
     def db(self): return self.reader.emu
 
-    def enrich(self, state, records=(), events=False, projectiles=False, gun=False):
+    def enrich(self, state, records=(), events=False, projectiles=False, gun=False, cam=False):
         kw = {}
         if records: kw["target_records"] = tuple((r, *R.read_target(self.db, r)) for r in records)
+        if cam: kw["cam"] = R.read_trackcam_view(self.db)
         if events: kw["events"] = tuple(tuple(e) for e in R.read_events(self.db))
         if projectiles:
             kw["projectiles"] = tuple((int.from_bytes(r[0x10:0x12], "little"), int.from_bytes(r[0xE:0x10], "little"))

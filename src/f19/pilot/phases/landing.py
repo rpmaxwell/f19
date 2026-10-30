@@ -29,6 +29,13 @@ class Landing:
     # GA_PAST_UNITS: go around when more than this many units past the aim point and still above 20 ft (was AIM_UNITS = 48,
     # i.e. at the base record; the runway box runs another 64 units past it, 2026-10-30).
     IDLE_ALT, GA_PAST_UNITS = 30, 80
+    # 2026-10-30, second Leck landing (348 kt, 765 ft, 19 km out): flaps down at 340 kt ballooned the plane ~120 ft, the gear would not
+    # come down until ~260 kt (6 km out) and the speed hold took 100 s to bleed 348 kt, so the glide started ~190 ft high and ended
+    # in a steep dive (21 ft at -19 ft/s, 140 ft over the glide at the aim point). So: BLEED_KT: idle the engine while more than
+    # this above the target speed (resume the hold within RESUME_KT of it); HIGH_FT / HIGH_KM: go around when still above
+    # HIGH_FT with HIGH_KM to the aim point left; IDLE_SINK_MAX: idle at IDLE_ALT only when sinking slower than this (ft/s),
+    # else keep power down to LOW_IDLE_ALT. None switches each off.
+    BLEED_KT, RESUME_KT, HIGH_FT, HIGH_KM, IDLE_SINK_MAX, LOW_IDLE_ALT = 30, 12, 160, 1.0, 10.0, 15
     LOG_GO_AROUND = True                           # one event line with the reason (the old phases logged none)
     # Short final (2026-10-20 go-around): below GLIDE_ALT the hold flies a SINK RATE aimed at the touchdown point
     # (height / time to the aim point, at least MIN_SINK) with a GLIDE_DEADBAND ft/s deadband. And no power added below
@@ -43,7 +50,7 @@ class Landing:
         self.rwy = bearing(approach_fix, base)                   # heading flown on final (0 or 180)
         self.s = 1 if abs(wrap(self.rwy)) < 90 else -1           # +1: landing northbound (approach from y larger)
         self.aim = (base[0], base[1] + self.s * self.AIM_UNITS)
-        self.idled = False
+        self.idled, self.bleeding, self.hist = False, False, []
         self.done = False
 
     def wants_control(self, state, ctx): return not self.done
@@ -62,7 +69,11 @@ class Landing:
         if self.state in ("approach", "final"):
             if to_aim < self.GEAR_KM: want_toggle(acts, state, Action.GEAR_TOGGLE, False)
             if to_aim < self.FLAPS_KM: want_toggle(acts, state, Action.FLAPS_TOGGLE, True)
-            thr.set(self.FINAL_KT if to_aim < self.FLAPS_KM else self.APPROACH_KT)
+            tgt = self.FINAL_KT if to_aim < self.FLAPS_KM else self.APPROACH_KT
+            if self.BLEED_KT is not None and (self.bleeding or spd > tgt + self.BLEED_KT):
+                if not self.bleeding: thr.idle(acts); self.bleeding = True; events.append(f"landing: {spd:.0f} kt, engine idle until {tgt + self.RESUME_KT} kt")
+                elif spd <= tgt + self.RESUME_KT: self.bleeding = False; thr.set(tgt)
+            else: thr.set(tgt)
             if to_aim < self.FLAPS_KM: self.state = "final"
             out["alt_cap"] = max(0.0, to_aim * self.ALT_PER_KM)   # glide path: never above it, never climb to it
             # sink limits by height: 12 ft/s above 100 ft, 6 ft/s down to the flare, 4 ft/s in the flare
@@ -73,13 +84,18 @@ class Landing:
                 out["deadband"] = self.GLIDE_DEADBAND
                 out["no_thr_up"] = spd >= self.NO_THR_UP_KT
             if alt < 60 and abs(state.att.roll) > 8 and abs(xt) <= 5: out["want"] = hdg   # aligned: wings level first
-            if 0 < alt < self.IDLE_ALT and not self.idled:
+            now = ctx.now(); self.hist = [h for h in self.hist + [(now, alt)] if h[0] >= now - 1.5]
+            vs = (alt - self.hist[0][1]) / (now - self.hist[0][0]) if now - self.hist[0][0] >= 0.4 else None
+            sinking = self.IDLE_SINK_MAX is not None and vs is not None and vs < -self.IDLE_SINK_MAX
+            if 0 < alt < (self.LOW_IDLE_ALT if sinking else self.IDLE_ALT) and not self.idled:
                 thr.idle(acts); self.idled = True
             if alt == 0: thr.idle(acts); self.state = "rollout"
-            elif (to_aim < -self.GA_PAST_UNITS / K and alt > 20) or (alt < 80 and abs(xt) > self.GA_XTRACK):
+            elif ((to_aim < -self.GA_PAST_UNITS / K and alt > 20) or (alt < 80 and abs(xt) > self.GA_XTRACK)
+                  or (self.HIGH_FT is not None and 0 < to_aim < self.HIGH_KM and alt > self.HIGH_FT)):
                 thr.max(acts); self.state = "go-around"
                 why = (f"{-to_aim:.2f} km past the aim point at {alt:.0f} ft" if to_aim < -self.GA_PAST_UNITS / K
-                       else f"{xt:+.0f} units off the centreline at {alt:.0f} ft")
+                       else f"{xt:+.0f} units off the centreline at {alt:.0f} ft" if alt < 80 and abs(xt) > self.GA_XTRACK
+                       else f"too high on short final: {alt:.0f} ft with {to_aim:.2f} km to the aim point")
                 if self.LOG_GO_AROUND: events.append(f"landing go-around: {why}, {spd:.0f} kt")
         if self.state == "rollout":
             out.update(alt_hold=False, roll_hold=False)
