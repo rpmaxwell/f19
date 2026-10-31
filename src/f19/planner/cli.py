@@ -79,6 +79,8 @@ def new_plan(argv=None):
     ap.add_argument("--loiter", choices=("auto", "off"), default="off",
                     help="after planning without one, add a loiter in a radar-quiet enemy cell to farm cold-war samples if the "
                          "spare fuel buys one (default off: a loiter is not flown yet and costs planning time)")
+    ap.add_argument("--landing-reserve", type=float, metavar="LB",
+                    help="fuel to keep at landing, lb (profile landing_reserve_lb, default 1000); written to plan.json overrides")
     ap.add_argument("--theater", default="auto", help="CE / NC / LB / PG (default: detect from the game's memory)")
     ap.add_argument("--roe", type=int, default=0, help="0 Cold War, 1 Limited, 2 Conventional")
     ap.add_argument("--mission", default="strike", choices=("strike", "air"))
@@ -119,6 +121,7 @@ def new_plan(argv=None):
     if a.fuel_estimate: settings["fuel_estimate"] = a.fuel_estimate
     spec = dict(theater=a.theater, takeoff=takeoff, landing=M["landing"]["place"], profile=a.profile,
                 extra_fuel=a.extra_fuel, settings=settings, overrides=dict(loiter=a.loiter))
+    if a.landing_reserve is not None: spec["overrides"]["landing_reserve_lb"] = a.landing_reserve
     if a.objective != "cost": spec["objective"] = a.objective
     json.dump(spec, open(D / "plan.json", "w"), indent=1)
     print(f"mission: {', '.join(f'{t['role']} {t.get('task', '?')} {t['object']} at {t['place']}' for t in M['targets'])}; "
