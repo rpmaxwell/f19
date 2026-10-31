@@ -538,7 +538,7 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   the aim point at 45 ft and floated ~1.2 km; an idle rule past the aim point would fix it (user: not needed for now). The early-idle speed bleed stays OFF.
   Landing constants in `pilot/phases/landing.py`: IDLE_ALT 30, GA_PAST_UNITS 80, HIGH_FT 160 / HIGH_KM 1.0, IDLE_SINK_MAX 10, STEEP_VS 18, BLEED_KT None.
 
-## Cutover steps 4 and 5: what was retired and what remains (2026-10-30)
+## Cutover steps 4 and 5: what was retired and what remains (2026-10-30) - SUPERSEDED by "Old code retired" below
 Step 4 ("delete the shims once nothing imports them") turned out much smaller than planned, because most "shims" are also the documented
 command-line tools, or are reached by tests through `tests/product.py`. An AST scan of every import (src, tests, scripts, analysis, research)
 and the docs found only two dead files. Deleted: `scripts/release_arrows.py` (-> `Emulator.release_arrows`, `Controls.after_load`) and
@@ -561,3 +561,22 @@ Suggested order for what is left: (1) move the memlog check code from `radar_gam
 `tests/product.py` at `f19.*`; (2) give the `analysis/` CLIs `python -m f19...` entry points and delete the wrappers; (3) retire the parity tests
 and reference copies once attack acquisition has landed; (4) migrate or drop the research scripts' flat imports. Each step is a pure move with the
 existing tests as the oracle.
+
+## Old code retired (2026-10-30, later the same day): CORRECTION to the table above
+The table above listed what blocked removing each legacy file. All of it is gone now; `analysis/` no longer exists and `scripts/` keeps only
+`nav.py` (shim for `f19.cli.fly`) and tools. Commits: `00d4271` (analysis/planner), `87a64df` (six thin CLIs), `a38ac5e` (memlog_load, fuel_log),
+`02172e5` and `c1e1219` (the old-vs-new oracle).
+- **Where things went:** `python -m f19.planner[.checks|.new_plan]`; `f19.rules.radar.check_np`; `f19.cli.memlog_checks` (radar / missiles / replay /
+  closed-loop: was `radar_game.py check`, `missile_game.py check|replay`, `missile_replay.py`); `f19.telemetry.memlog_load`; `python -m f19.cli.fuel_log`;
+  `f19.cli.gameworld.GameWorld` (was `read_mission.WORLD`); `python -m f19.rules.weapons [release]`, `f19.gamedata.exe|missions|terrain|wld`.
+  Deleted without replacement: `scripts/phases.py`, `missile_watch.py`, `nav_tui.py`, `f19_state.py`, `read_mission.py`, `dosbox_automation.py`,
+  `gun_probe.py`, `analysis/radar_game.py`, `missile_game.py`, `territory.py`, `theaters.py`, `fuel_model.py`, `research/scripts/nav_legacy.py`,
+  `release_arrows.py`, `fix_after_load.py`. (`git show c1e1219^:<path>` recovers any of them.)
+- **What the tests do instead** (tests/README.md): synthetic-world scenarios keep their outcome assertions; the reader, mission parser, mission generator, HUD layout,
+  `parse_missile_world` and the radar table are checked against digests/literals recorded from the old modules that day; core geometry/units against reference
+  formulas; loops, arbiter and fly-leg are characterisation tests (digest per scenario, `PRINT_DIGESTS=1` to refresh). Lost: the old-code replay baseline
+  (`tests/replay/baseline.json`: the old code's agreement with the nav log) and the per-tick old-vs-new comparison, which had needed pins to keep up with the
+  deliberate changes (attack prep loop, photo confirmation, landing). The arbiter replay digests were re-recorded under the defaults (17 of 313 ticks changed in
+  one run, all around an attack and an overlapping fighter evasion).
+- **Mistake on the way:** `00d4271` was committed with 8 failing tests (nav_tui still imported `planner.score`); fixed in `a410cbf` before anything else was built on it.
+- **Still open:** research scripts still import the deleted flat modules (they may break, by design); the `ts` / game-time question; `desired_roster_state.csv`.

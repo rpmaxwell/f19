@@ -74,11 +74,11 @@ One layered package, `src/f19/`:
 `GameState`.
 
 **Other trees:**
-- `scripts/` and `analysis/` hold shims (`scripts/nav.py` is a shim for `f19.cli.fly`), tools, and reference copies
-  the equivalence tests import (`scripts/phases.py`, `missile_watch.py`, `nav_tui.py`; the old nav is
-  `research/scripts/nav_legacy.py`). Don't add new product code there; put it in the package. Nothing under `src/` imports them
-  (enforced). Most of what is left is a documented CLI or is reached by tests through `tests/product.py`; the table in
-  `docs/design/refactor_plan.md` ("Cutover steps 4 and 5") lists each file and what blocks removing it.
+- `scripts/` holds `nav.py` (a one-line shim for `f19.cli.fly`) and a few tools (`mission_finder.py`, `plan_bench.py`,
+  `compare_objectives.py`, `build_roster.py`, `alt_schedule.py`, `unstick_keys.py`, `launch_f19.sh`). There is no `analysis/` any more:
+  the planner is `python -m f19.planner[.checks|.new_plan]`, the memlog checks `python -m f19.cli.memlog_checks`, the fuel log
+  `python -m f19.cli.fuel_log`, and the rules and data tables `python -m f19.rules.weapons|fuel`, `f19.gamedata.exe|missions|terrain|wld`.
+  Don't add new product code to `scripts/`; put it in the package. Nothing under `src/` imports it (enforced).
 - `research/` holds RE tools, trials, probes and notebooks. It is outside the package and the tests and **may break**.
 
 ## Data and settings
