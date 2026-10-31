@@ -1,7 +1,6 @@
 """Shared pytest setup.
 
   --run-slow          also run tests marked @pytest.mark.slow (full planner runs, minutes each)
-  --update-baseline   rewrite tests/replay/baseline.json from the current code instead of comparing against it
 
 Data the tests read lives outside the repo, under F19_DATA (default ~/f19-data):
   fixtures/plans/<name>/     frozen planner inputs + expected outputs (golden tests)
@@ -15,7 +14,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import product  # noqa: E402  (puts src/, analysis/, scripts/ on sys.path)
+import product  # noqa: E402  (puts src/ on sys.path)
 
 S = product.settings()
 FIXTURES = S.data / "fixtures"
@@ -23,8 +22,6 @@ FIXTURES = S.data / "fixtures"
 
 def pytest_addoption(parser):
     parser.addoption("--run-slow", action="store_true", default=False, help="run tests marked slow (full planner runs)")
-    parser.addoption("--update-baseline", action="store_true", default=False,
-                     help="rewrite tests/replay/baseline.json from the current code (review the diff before committing)")
 
 
 def pytest_configure(config):

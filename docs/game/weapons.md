@@ -4,8 +4,8 @@ Ordnance vs target strength, weapon release and blast damage, photo/lock/guidanc
 
 ## Ordnance vs target strength — decoded from EGAME.EXE (2026-10-17)
 
-`analysis/ordnance.py` prints all of this from the game files. EGAME DGROUP = image 0x1ecf0 after
-`unexepack.py` (START has the same tables at its own DS).
+`python -m f19.rules.weapons` prints all of this from the game files. EGAME DGROUP = image 0x1ecf0 after
+`python -m f19.gamedata.exe` (START has the same tables at its own DS).
 - **Missile/bomb specs** (18 B: name[8], u16 range?, speed?, mode, agility?, flags?), indexed by `spec`:
   0x16 AIM120, 0x17 AIM-9, 0x18 HARM, 0x19 Penguin, 0x1a Harpoon, 0x1b AGM-65, **0x1c LGBOMB, 0x1d RTBOMB,
   0x1e FFBOMB** (laser-guided / retarded / free-fall), plus the enemy SA-x/AA-x entries.
@@ -80,7 +80,7 @@ Planner-facing summary: [notes/targeting_for_planner.md](../design/targeting_for
   the target line, so missiles loft.
 - **Airspeed** kt = ds:7F94 / 27 (ds:855A). Missile start speed = ds:7F94 >> 11 = kt/76.
 - **Frame scale** ds:4EFC = (measured frame value + 2)/4, clamped [4 - accel, 15]; halved in time acceleration.
-- analysis/release_geometry.py simulates the low-altitude Maverick sink and the photo windows from these rules.
+- `python -m f19.rules.weapons release` simulates the low-altitude Maverick sink and the photo windows from these rules.
 
 ## Guns — EGAME (2026-10-18, from the disassembly; not yet seen in flight)
 
@@ -122,3 +122,11 @@ Plan built on this: [notes/gun_attack_plan.md](../design/gun_attack_plan.md).
 - Kill points (END 0x4258 [roe][cat], cat = END ds:998A[class & 0x7f] & 0xf, the .WLD 100-B category table read at
   END_decomp.c:132): Limited 2,6,1,1,3,8,2,2,5,3,1,9,4,0,0,0; Conventional 4,12,3,3,6,16,4,5,11,7,3,18,8,0,0,0.
   Before the table: type flag 0x40 or a target in a non-enemy cell -> -25; flag 0x80 -> ds:4222 (-10/-4/+1).
+
+## Photo frames that do not count (2026-10-28)
+
+Established from memlogs (no live test of the fix yet). Six frames that counted (flights 1792542533, 1792546698, 1792603394 x2, 1792609731 and one more) were fired with the photo-score model
+(`|e - pitch + 9.74|` + heading error + range, units) at 195-216; two that did not count (1793133230 at about 225-240; Prague 1793212799 at 233, bay open the whole time, the event
+list holds no type 10) were fired at the relaxed trigger (score < budget - 20 = 236). The model passes both, so either the game's real window is tighter than `(8 - 2 opp) x 64` by roughly 20-40 units or
+the model misses a term; **not established**. Prague also had a 3-4 deg heading error (0.4-0.65 km cross-track at the run-in), worth 35-45 units. Fix in `Attack`: keep pressing Enter every
+`FRAME_RETRY_S` (1 s) until the event log shows type 10 for the target (bay stays open), give up at the photo point; `Attack.CONFIRM_PHOTO = False` restores one frame. Untested live.

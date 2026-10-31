@@ -13,7 +13,7 @@ Everything is in waypoint-table units (game units, 64 per km; player position >>
   report    summary, report text, route.png, route.json dict (in memory)
   estimate  the cheap fuel estimate and FuelConstraint (FlightDirector's first_feasible)
   api       plan_mission(spec, mission) and route(state, goal, constraints, budget_s, planner=context(...))
-  cli       the files: python analysis/planner <plan_dir>, analysis/planner/new_plan.py
+  cli       the files: python -m f19.planner <plan_dir>, python -m f19.planner.new_plan
 
 A plan that breaks a limit is an error in the planner's output, reported by the validator; fix the planner or the
 spec, never the route file.

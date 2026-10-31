@@ -157,10 +157,3 @@ def test_connect_retries(server):
         A.connect("127.0.0.1", free, retry_s=0.6)
     assert time.time() - t >= 0.5
     with A.connect("127.0.0.1", server.port) as e: assert e.peek(0, 1) == b"\0"
-
-
-def test_shim_exposes_old_names(server):
-    import dosbox_automation as D
-    assert D.Dosbox is Emulator and D.DEFAULT_HOST == "127.0.0.1"
-    with D.Dosbox("127.0.0.1", server.port) as db:
-        db._send("PEEK 0:0 2"); assert db._recv_line() == "PEEK-REPLY 0000"

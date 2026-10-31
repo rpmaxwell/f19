@@ -507,3 +507,92 @@ trigger (see attack.py). Open: bearings for in-flight replans; the director's st
   the first goal) when the first attempt fails; rejoin searches are windowed to the part of the reference still ahead.
   Probed from t=744 and t=1374 of flight 1793113975 (tests/unit/pilot/test_director_liberec.py): the full mission routes.
 - Untested live. Not changed: the planner objective ignores the fuel margin; the director idles after a suppressed eject.
+
+## Cutover progress (2026-10-29)
+- Branch `planner-refactor` merged to `main` (fast suite 621 passed; goldens green); work continues on branch `cutover`.
+- `Controls`: DESIGNATE has no key; it is dropped and counted in `Controls.unsupported` instead of raising (no more runner crash path).
+- Zero-length legs: `Route.legs` keeps them (planner output), `FlyLeg` merges them as nav did. Documented, not changed.
+- **Game clock, measure-only (scope decided 2026-10-29).** `core.clock.FrameClock` derives game s and the game/wall ratio from ds:5520 and
+  ds:4EFC (`memory.reader.read_frame_fs`); the Runner feeds it every tick and logs `clock: game N.NNx real` every 120 s. Loops, behaviors and
+  `ts` are NOT switched: they still run on wall time and `time_mult` (which reads 1 while the game runs ~2.1-2.6x, as seen in the three replay
+  fixtures: 2.1-2.6). Replay key streams of all three fixtures are byte-identical to before; only the event files gain clock lines.
+  Still to decide, with live data: feed the measured ratio in as `ts`, or move every timer to game seconds.
+- Left: live flights (checklist a-h), then retiring the shims/legacy references.
+
+## Live flight 2026-10-30 (ce_cottbus_1030_1327, Veteran, Gutersloh -> Leck): first `--auto` takeoff, attacks, landing
+- Takeoff, route, fighter / missile reactions flew as designed. Both attacks failed in prep: B never selected the target (primary: lock stayed
+  65535; secondary: stuck on record 7, the SAM beside the tank farm). Not new: 32-40 B presses without the briefing target on 10-22, 10-23, 10-27.
+- First landing went around at 22 ft past the aim point (float; go-around fired at the base record). Changed in 778e89a (idle from 30 ft, go-around at
+  80 units past the aim). The retry (entry 348 kt, 765 ft, 18.9 km out) landed but late and hard: ~140 ft over the glide at the aim point, 21 ft at -19 ft/s,
+  touchdown ~0.5 km past the base record, stopped 0.79 km past it (box ends ~1 km). Idle at 30 ft may hurt a steep arrival: follow-up.
+- **TODO (user, 2026-10-30): end of flight.** `fly` exits at speed 0, which leaves the game paused on the runway (EGAME still running). A separate
+  script should end the flight and go to the debrief screen. Not designed; needs the key / menu sequence for the debrief.
+- **Third Leck landing, 2026-10-30: crash caused by the early-idle speed bleed (landing.py BLEED_KT), now OFF.** 252 kt, 654 ft, 11.6 km out, gear and flaps
+  down. Throttle went to 0 on tick 1 and stayed there while speed fell 252 -> 98 kt (25 s); the incremental speed hold (5 % steps with pauses)
+  first added power at 92 kt, the plane stalled (-33, -65, -90 ft/s) and hit the ground ~3 km short. Lesson: never drop to idle in the air
+  unless the way back is a direct throttle command with a floor, and test it at altitude first. The height gate (go around above 160 ft within
+  1 km of the aim point) and the sink-rate gate on the 30 ft idle are still on, not yet flown.
+- **Landing, 2026-10-30, later attempts:** (4) 246 kt, 641 ft, 9 km: the 12 ft/s sink limit never caught the glide line, the new height gate sent it around at 246 ft,
+  0.99 km short of the aim point (as designed). Fix: 18 ft/s sink limit while >80 ft above the line and above 150 ft (STEEP_VS). (5) 279 kt, 690 ft, 26 km: landed,
+  stopped 0.76 km past the base record (box ends ~1 km). Known weakness left in: the speed hold added power at 110 kt and overshot to 149 kt, so the plane crossed
+  the aim point at 45 ft and floated ~1.2 km; an idle rule past the aim point would fix it (user: not needed for now). The early-idle speed bleed stays OFF.
+  Landing constants in `pilot/phases/landing.py`: IDLE_ALT 30, GA_PAST_UNITS 80, HIGH_FT 160 / HIGH_KM 1.0, IDLE_SINK_MAX 10, STEEP_VS 18, BLEED_KT None.
+
+## Cutover steps 4 and 5: what was retired and what remains (2026-10-30) - SUPERSEDED by "Old code retired" below
+Step 4 ("delete the shims once nothing imports them") turned out much smaller than planned, because most "shims" are also the documented
+command-line tools, or are reached by tests through `tests/product.py`. An AST scan of every import (src, tests, scripts, analysis, research)
+and the docs found only two dead files. Deleted: `scripts/release_arrows.py` (-> `Emulator.release_arrows`, `Controls.after_load`) and
+`scripts/fix_after_load.py` (a one-off probe that used it). `tests/test_import_rules.py` already fails if anything under `src/` imports a legacy flat module.
+
+Remaining, and what blocks each (nothing here is imported by `src/`):
+
+| file(s) | what it is | blocker |
+|---|---|---|
+| `scripts/nav.py` | one-line shim for `f19.cli.fly` | the user's habit and 12 doc references; keep |
+| `scripts/phases.py`, `missile_watch.py`, `nav_tui.py` | frozen reference copies for the old-vs-new equivalence and replay tests | attack-acquisition work in progress by another agent; retire the parity tests first, then delete together with the `tests/unit/*/*_legacy.py` copies and `research/scripts/nav_legacy.py` |
+| `scripts/f19_state.py`, `read_mission.py`, `dosbox_automation.py` | re-exports of `f19.memory` / `f19.emulator` | `tests/unit/memory/*_legacy.py`, `test_automation.py` and ~17 research scripts import them |
+| `analysis/radar_game.py`, `missile_game.py` | re-exports plus the memlog check code (`radar_game.py check`, `missile_game.py check|replay`) | the check code is not in the package yet; tests reach them through `tests/product.py` |
+| `analysis/territory.py`, `theaters.py`, `memlog_load.py`, `fuel_log.py` | re-exports / real log tools | `tests/product.py`, `tests/unit/*`, `scripts/` |
+| `analysis/ordnance.py`, `release_geometry.py`, `terrain_3d.py`, `unexepack.py`, `mission_catalog.py`, `parse_theater.py`, `fuel_model.py` | thin CLIs over `f19.rules` / `f19.gamedata` | documented tools (CLAUDE.md, docs/game); would need `python -m f19...` entry points first |
+| `analysis/planner/*` | `python analysis/planner <dir>` and the checks | `tests/product.py` loads `plan.py` and `checks.py` from there; `checks.py` is being edited by another agent |
+| `scripts/mission_finder.py`, `gun_probe.py`, `missile_replay.py`, `plan_bench.py`, `compare_objectives.py`, `build_roster.py`, `alt_schedule.py`, `unstick_keys.py` | real tools, not shims | stay (unstick_keys waits for a live memory check) |
+
+Suggested order for what is left: (1) move the memlog check code from `radar_game.py` / `missile_game.py` into `f19.telemetry` / tests and point
+`tests/product.py` at `f19.*`; (2) give the `analysis/` CLIs `python -m f19...` entry points and delete the wrappers; (3) retire the parity tests
+and reference copies once attack acquisition has landed; (4) migrate or drop the research scripts' flat imports. Each step is a pure move with the
+existing tests as the oracle.
+
+## Old code retired (2026-10-30, later the same day): CORRECTION to the table above
+The table above listed what blocked removing each legacy file. All of it is gone now; `analysis/` no longer exists and `scripts/` keeps only
+`nav.py` (shim for `f19.cli.fly`) and tools. Commits: `00d4271` (analysis/planner), `87a64df` (six thin CLIs), `a38ac5e` (memlog_load, fuel_log),
+`02172e5` and `c1e1219` (the old-vs-new oracle).
+- **Where things went:** `python -m f19.planner[.checks|.new_plan]`; `f19.rules.radar.check_np`; `f19.cli.memlog_checks` (radar / missiles / replay /
+  closed-loop: was `radar_game.py check`, `missile_game.py check|replay`, `missile_replay.py`); `f19.telemetry.memlog_load`; `python -m f19.cli.fuel_log`;
+  `f19.cli.gameworld.GameWorld` (was `read_mission.WORLD`); `python -m f19.rules.weapons [release]`, `f19.gamedata.exe|missions|terrain|wld`.
+  Deleted without replacement: `scripts/phases.py`, `missile_watch.py`, `nav_tui.py`, `f19_state.py`, `read_mission.py`, `dosbox_automation.py`,
+  `gun_probe.py`, `analysis/radar_game.py`, `missile_game.py`, `territory.py`, `theaters.py`, `fuel_model.py`, `research/scripts/nav_legacy.py`,
+  `release_arrows.py`, `fix_after_load.py`. (`git show c1e1219^:<path>` recovers any of them.)
+- **What the tests do instead** (tests/README.md): synthetic-world scenarios keep their outcome assertions; the reader, mission parser, mission generator, HUD layout,
+  `parse_missile_world` and the radar table are checked against digests/literals recorded from the old modules that day; core geometry/units against reference
+  formulas; loops, arbiter and fly-leg are characterisation tests (digest per scenario, `PRINT_DIGESTS=1` to refresh). Lost: the old-code replay baseline
+  (`tests/replay/baseline.json`: the old code's agreement with the nav log) and the per-tick old-vs-new comparison, which had needed pins to keep up with the
+  deliberate changes (attack prep loop, photo confirmation, landing). The arbiter replay digests were re-recorded under the defaults (17 of 313 ticks changed in
+  one run, all around an attack and an overlapping fighter evasion).
+- **Mistake on the way:** `00d4271` was committed with 8 failing tests (nav_tui still imported `planner.score`); fixed in `a410cbf` before anything else was built on it.
+- **Still open:** research scripts still import the deleted flat modules (they may break, by design); the `ts` / game-time question; `desired_roster_state.csv`.
+
+## ts / game time: resolved (2026-10-30) - CORRECTION to "ts reads 1 while the game runs 2.4-2.6x"
+The sections above (2 "Time", 7 "Known bugs", 4.3, WP-7d, "Cutover progress") treat `ts` = 1 against a measured ~2.5x as a bug and propose moving the loops
+to game seconds. **That was a misreading.** Measured from the memlogs of 20 flights (docs/game/memory-map.md "Game seconds per real second"): at time byte 1 the
+game runs 2.46 game s per real s (median of 8010 windows, p10-p90 2.20-2.74), at byte 2 it runs 4.98. The byte is relative acceleration; 2.46 is the emulator's
+nominal speed. Every loop gain, hold time and timer was tuned live in real seconds at that speed, so feeding the measured ratio in as `ts` would have changed all
+of them by 2.46x (it was never done, and must not be).
+- **Decision:** leave the loops and behaviours on real seconds and the time byte. (The "0.91x" I quoted for the 10-30 landing runs was the first 1.5 s reading of a
+  run, not the rate; the run's real rate was ~2.4.)
+- **Changed:** `core.units.GAME_PER_WALL = 2.46` (documented, with the evidence); `TerrainEscape` assumed speed (before its own track exists) now x `ts` (it was a
+  constant 2.5 and wrong by 2x under TIME x2); the Runner's `clock:` line shows the speed relative to the tuned one (`time byte 1 = 1.02 of the tuned speed`) and
+  says OUTSIDE when it is under 0.8 or over 1.25 (a slower or faster emulator shifts every tuned constant by that factor). CLAUDE.md and the first-flight
+  checklist say the same. Tests: `test_terrain_escape_assumed_speed_scales_with_the_time_byte`, `test_clock_line_*`, `test_game_per_wall_is_the_measured_nominal_rate`.
+- **Not done / untested:** time byte 3+ (never flown); other machines or DOSBox `cycles` settings; whether to scale by the measured ratio to follow
+  scene-load swings of +-10 % inside a flight (no evidence it matters; the flights flew fine).
+- WP-7d's "switch to the game Clock" is therefore closed as not needed; FrameClock stays as a measurement.

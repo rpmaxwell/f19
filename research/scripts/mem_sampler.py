@@ -11,7 +11,8 @@ key held). Writes logs/mem/<start>/snap_<t>.bin until logs/mem/STOP exists.
 import sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
 
 PERIOD = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
 START = int(sys.argv[2], 16) if len(sys.argv) > 2 else 0x30000

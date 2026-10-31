@@ -6,7 +6,7 @@ off the route and flew into the ridge at 704 ft while its banner said MOUNTAIN A
 probe(p, hdg, alt, max_km) -> (km, top ft) of the first terrain within MARGIN_FT of alt straight ahead (nav's
 terrain_ahead on the planner's decoded terrain) or None. Time to impact = km / ground speed. All times are REAL
 seconds (the caller's now): the closing speed is measured from the plane's own track (units per real s over the last
-few s), with the game-physics estimate (0.788 x kt x ASSUMED_RATIO) only until then.
+few s), with the game-physics estimate (0.788 x kt x ASSUMED_RATIO x ts) only until then.
   - inside WARN_S: TURN. Probe headings +-FAN_DEG around the nose; fly the clear one nearest to where the route wants
     to go (ctx.want), at ESCAPE_RATE deg/s. Mountains stay walls.
   - still pointed at terrain inside CLIMB_S: CLIMB as the last resort - hold top + CLIMB_ABOVE_FT at up to CLIMB_VS ft/s
@@ -16,7 +16,7 @@ attack / strafe above 100 ft): its track speed needs the samples.
 """
 import math
 
-from f19.core.units import GROUND_PER_KT
+from f19.core.units import GAME_PER_WALL, GROUND_PER_KT
 
 from f19.pilot.phases._common import K, command_of, wrap
 
@@ -31,7 +31,7 @@ class TerrainEscape:
     # CLIMB_ABOVE_FT over it; nav adds full power only when slow.
     ESCAPE_RATE, CLIMB_ABOVE_FT, CLIMB_VS, CLIMB_MARGIN_FT = 3.0, 300, 60.0, 50
     GROUND_PER_KT = GROUND_PER_KT                        # 0.788: map distance per game s / indicated kt
-    ASSUMED_RATIO = 2.5                                  # game s per real s until the track gives a speed
+    ASSUMED_RATIO = GAME_PER_WALL                        # game s per real s at ts 1, until the track gives a speed (x ts when time is accelerated)
 
     def __init__(self, probe):
         self.probe, self.state, self.clear_since, self.climb_to, self.log = probe, "off", None, None, []
@@ -40,14 +40,15 @@ class TerrainEscape:
 
     def wants_control(self, state, ctx): return self.state != "off"
 
-    def _km_s(self, kt, p, now):
-        """Ground speed, km per REAL s: from the plane's own track over the last 2-6 s if there is one."""
+    def _km_s(self, kt, p, now, ts=1.0):
+        """Ground speed, km per REAL s: from the plane's own track over the last 2-6 s if there is one, else from the game physics at
+        ASSUMED_RATIO x ts (the time byte is relative to the nominal 2.46 game s per real s)."""
         self.track.append((now, p)); self.track = [q for q in self.track if q[0] >= now - 6.0]
         t0, p0 = self.track[0]
         if now - t0 >= 2.0:
             v = math.dist(p, p0) / K / (now - t0)
             if v > 0.02: return v
-        return max(kt, 100) * self.GROUND_PER_KT * 1.852 / 3600 * self.ASSUMED_RATIO
+        return max(kt, 100) * self.GROUND_PER_KT * 1.852 / 3600 * self.ASSUMED_RATIO * ts
 
     def step(self, state, ctx):
         ov, ev = self._step(state, state.xy, ctx.now(), ctx.want, state.ts)
@@ -55,7 +56,7 @@ class TerrainEscape:
 
     def _step(self, s, p, now, route_want, ts=1.0):
         alt, hdg = s.alt_ft, s.heading
-        v = self._km_s(s.speed_kt, p, now)
+        v = self._km_s(s.speed_kt, p, now, ts)
         hit = self.probe(p, hdg, alt, self.MAX_KM)
         t_hit = hit[0] / v if hit else math.inf
         if t_hit > self.WARN_S:

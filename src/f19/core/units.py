@@ -4,7 +4,7 @@ Positions: "units" are waypoint-table units, 64 per km (player position ds:94EE 
 0x451B8 is 2048 per km). Y grows south. Territory / terrain-type / SA-14 cells are 32 km = 2048 units, cell = x >> 11,
 16 x 16 cells per theater (analysis/territory.py). The planner's search grid is 2 km (planner/world.py CELL_KM).
 Angles: 65536 = 360 deg, 0 = north, clockwise (ds:46DA heading; pitch/roll are signed s16).
-Speed: map distance per game s is GROUND_PER_KT x the indicated airspeed (16 logged flights, analysis/fuel_log.py,
+Speed: map distance per game s is GROUND_PER_KT x the indicated airspeed (16 logged flights, python -m f19.cli.fuel_log,
 2026-10-21). Clock: one game-clock tick (ds:6630) = 2 game s; event-list cells are x >> 7, y >> 7.
 """
 
@@ -21,10 +21,17 @@ PLAN_CELL_UNITS = PLAN_CELL_KM * K
 EVENT_CELL_SHIFT = 7         # flight-event list stores x >> 7, y >> 7 (f19_state.read_event_list)
 
 KT_KMH = 1.852               # km/h per knot (a plain unit, NOT the planner's world.KT_KMH: see GROUND_KMH_PER_KT)
-GROUND_PER_KT = 0.788        # ground speed / indicated airspeed (planner/world.py, analysis/fuel_log.py)
+GROUND_PER_KT = 0.788        # ground speed / indicated airspeed (planner/world.py, python -m f19.cli.fuel_log)
 GROUND_KMH_PER_KT = KT_KMH * GROUND_PER_KT     # = planner/world.py KT_KMH (map km per game hour per indicated kt)
 FT_PER_M = 3.28084
 CLOCK_TICK_S = 2             # game s per clock tick (ds:6630)
+# Game seconds per real second at time_mult 1 on the F-19 emulator setup (DOSBox-X, f19-dosbox.conf). MEASURED, 2026-10-30, from the memlogs of
+# 20 flights (game clock ds:6630 against snapshot wall time, 60 s windows): median 2.46 (p10 2.20, p90 2.74, 8010 windows). The time-multiplier byte
+# (ds:410AA, `ts` / GameState.time_mult) is RELATIVE to this: byte 2 (TIME x2) measured 4.98 = 2.02 x 2.46 (138 windows). So `ts` = 1 is right,
+# not a bug: every loop gain, hold time and CLEAR_S-style constant in f19.pilot was tuned live in real seconds at this speed and divides by `ts`.
+# Code that needs an ABSOLUTE rate (a speed in km per real second before a track exists) uses GAME_PER_WALL * ts. A machine or config that
+# runs the emulator at another speed shifts every tuned constant by the same factor: the Runner's clock line flags it.
+GAME_PER_WALL = 2.46
 
 ANGLE_FULL = 65536
 DEG_PER_ANGLE16 = 360 / ANGLE_FULL

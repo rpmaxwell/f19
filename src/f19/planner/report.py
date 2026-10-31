@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 from f19.rules import radar as rg
 from f19.rules import scoring as score
 
-from . import alertsim, fuelplan
+from . import alertsim, fuelplan, profiles
 from .radar import MODEL
 from .router import hdg, turn_deg, unit
 from .world import GROUND_KMH_PER_KT as KT_KMH, K
@@ -52,11 +52,15 @@ def summarise(pl, best):
     id_pen = int(round(10 * exp_ids))
     lb_ps = pl.regimes.lb_per_sample(P["fuel_ref_lb"], P["cruise_ft"])
     spare = fu["fuel_land"] - P["landing_reserve_lb"]
-    roles = {t["role"].rstrip("?") for t in pl.M["targets"]}
+    roles = set(best["roles"]) if best.get("roles") else {t["role"].rstrip("?") for t in pl.M["targets"]}
     st = {**pl.spec.get("settings", {})}
     est = lambda lo, hi, pen: score.estimate(range(lo, hi + 1), pl.th, st, "primary" in roles, "secondary" in roles, pen)
     base_rng, score_rng, assumed = est(smin, smax, id_pen)
     _, score_nopen, _ = est(smin, smax, 0)
+    sk = [dict(role=t["role"].rstrip("?"), object=t["object"], place=t["place"], why=w) for t, w in pl.skipped]
+    if sk:                                          # what the skipped objectives would have scored (route as planned)
+        all_roles = roles | {k["role"] for k in sk}
+        _, score_with, _ = score.estimate(range(smin, smax + 1), pl.th, st, "primary" in all_roles, "secondary" in all_roles, id_pen)
     extra = 0.0 if best.get("loiter") else max(0.0, spare) / lb_ps      # samples still available for a loiter
     _, score_loiter, _ = est(smin + int(extra), smax + int(extra), id_pen)
     res_samples = P["landing_reserve_lb"] / lb_ps
@@ -72,11 +76,28 @@ def summarise(pl, best):
                 base_points=list(base_rng), score_est=list(score_rng), score_without_id_penalty=list(score_nopen),
                 score_if_loitered=list(score_loiter), score_without_reserve=list(score_nores),
                 radar_overrides_km=fu["overrides"], score_assumptions=assumed,
-                alert=sim.get("summary"), cost=round(best["cost"], 1)), sim, samples
+                alert=sim.get("summary"), cost=round(best["cost"], 1),
+                sa14_launch_chance=round((sim.get("sa14") or {}).get("p_launch", 0.0), 3),
+                skipped=sk, **({"score_with_skipped": list(score_with)} if sk else {})), sim, samples
 
 
 def _t(s):
     return "-" if s is None else f"{int(s // 60)}:{int(s % 60):02d}"
+
+
+def sa14_block(pl, sim):
+    """SA-14 cells (alertsim._sa14): the skipped targets, and the predicted launches when the route is in a live cell."""
+    L = []
+    for t, why in pl.skipped:
+        L.append(f"!! SKIPPED {t['role'].rstrip('?')} {t['object']} {t['place']}: {why}. The plan flies without it "
+                 f"(settings \"sa14\": \"soft\" plans it anyway).")
+    a = sim.get("sa14") or {}
+    if a.get("minutes", 0) > 0:
+        first = f", first at {_t(a['first'])} game min" if a.get("first") is not None else ""
+        L.append(f"!! PREDICTED SA-14 launch: {a['minutes']:.1f} min in live SA-14 cells = ~{a['checks']:.1f} spawn checks "
+                 f"(every 32 s, {a['p_per_check']:.0%} of them launch); chance of at least one launch {a['p_launch']:.0%}{first}. "
+                 f"A launch raises the network alert.")
+    return L
 
 
 def radar_block(pl, sim):
@@ -104,6 +125,13 @@ def radar_block(pl, sim):
     return L
 
 
+def _pe(e):
+    """One line of a route's points.value (objective points / aircraft)."""
+    f = (f", fighter shots {e['shots']:.2f}, visual IDs {e['visual_ids']:.2f}" if "shots" in e else "")
+    return (f"E[points] {e['exp_pts']:.0f} of {e['full']:.0f} ({'+'.join(e['roles'])}), P(bay hit) {e['p_bay']:.0%}, "
+            f"expected hits {e['hits']:.2f}, {e['minutes']:.0f} min{f}")
+
+
 def report(pl, best, results, summ, sim):
     W, RM, P, V = pl.W, pl.RM, pl.P, best["V"]
     r = pl.router
@@ -115,9 +143,13 @@ def report(pl, best, results, summ, sim):
          f"corner {P['turn_simplicity_km']:g} km + banked-arc exposure; min turn radius {P['min_turn_radius_km']:.0f} km, "
          f"altitude {P['cruise_ft']:.0f} ft where no site would see the plane, {P['threat_ft']:.0f} ft where one would "
          f"(from {P['alt_lead_km']:g} km before)", ""]
-    L += radar_block(pl, sim) + ["", f"CHOSEN: {best['tag']}"]
+    L += sa14_block(pl, sim) + radar_block(pl, sim) + ["", f"CHOSEN: {best['tag']}"]
     for o in results:
-        if o is not best: L.append(f"  also: {o['tag']}: cost {o['cost']:.0f}" + (f", {len(o['errors'])} errors" if o["errors"] else ""))
+        if o is not best: L.append(f"  also: {o['tag']}: cost {o['cost']:.0f}" + (f", {len(o['errors'])} errors" if o["errors"] else "")
+                                   + (f", {_pe(o['points_eval'])}" if "points_eval" in o else ""))
+    if "points_eval" in best:
+        L.append(f"  objective {pl.objective}: {_pe(best['points_eval'])}")
+    for tag, why in getattr(pl, "skipped_options", ()): L.append(f"  also: {tag}: skipped, {why}")
     s = summ
     L += ["", f"route {s['km']:.0f} km, {s['game_min']:.0f} game min, {s['turns']} turns, expected seen pulses {s['exposure_pulses']:.1f}, "
               f"SA-14 cell time {s['sa14_minutes']:.1f} min{'' if W.night else ' (day)'}",
@@ -141,6 +173,8 @@ def report(pl, best, results, summ, sim):
     L += [f"rating estimate (targets as planned, safe landing, expected radar IDs {s['expected_radar_ids']:.2f} = -{s['id_penalty_base']} base): "
           f"base {s['base_points'][0]}-{s['base_points'][1]}, score {s['score_est'][0]}-{s['score_est'][1]} "
           f"(without the ID penalty {s['score_without_id_penalty'][0]}-{s['score_without_id_penalty'][1]})",
+          *([f"  without the skipped {', '.join(k['role'] for k in s['skipped'])}: score {s['score_with_skipped'][0]}-{s['score_with_skipped'][1]} "
+             f"if it could be flown (the skip costs ~{s['score_with_skipped'][1] - s['score_est'][1]} points at most)"] if s["skipped"] else []),
           f"  the {P['landing_reserve_lb']:.0f} lb landing reserve costs ~{P['landing_reserve_lb'] / s['lb_per_sample']:.0f} samples: "
           f"score {s['score_without_reserve'][0]}-{s['score_without_reserve'][1]} with none (a crash isn't penalised; "
           f"your call, not the planner's)"] + [f"  assumes {a}" for a in s["score_assumptions"]]
@@ -164,6 +198,11 @@ def report(pl, best, results, summ, sim):
             mode, why = pl.attack_mode(t)
             L.append(f"  {role}: {t['object']} {t['place']} -> {mode} ({why})")
         L += [f"  {l}: {a['action']}" for p, l, a in best["pts"] if l and a.get("action")]
+        for p, l, a in best["pts"]:
+            if a.get("acq"):
+                q = a["acq"]
+                L.append(f"  {l}: trackcam lock window {q['far_km']:g}-{q['near_km']:g} km before the target ({q['len_km']:g} km), "
+                         f"\"/\" then <= {q['presses']} B ({'night' if pl.W.night else 'day'}; the pick rule does not depend on the difficulty)")
     L += ["", "CHECKS: " + ("all passed" if not best["errors"] else "FAILED")] + [f"  !! {e}" for e in best["errors"]]
     notes = sorted(pl.router.notes)
     if best["log"] or pl.log or notes: L += ["", "planner log:"] + [f"  {m}" for m in notes + pl.log + best["log"]]
@@ -243,7 +282,7 @@ def draw(pl, best, samples):
 def route_json(pl, best, spec, summ):
     """route.json (schema 2): the spec as planned, the profile, the summary and the points (route_points)."""
     pts = best["pts"]
-    return dict(schema=2, spec=spec, profile=pl.P, summary=summ, chosen=best["tag"], errors=best["errors"],
+    return dict(schema=2, spec=spec, profile=({k: v for k, v in pl.P.items() if k not in profiles.OBJECTIVE_KEYS} if pl.objective == "cost" else pl.P), summary=summ, chosen=best["tag"], errors=best["errors"],
                 takeoff_heading=spec.get("takeoff_heading"),
                 waypoints_game=[[[float(p[0]), float(p[1])], l] for p, l, _ in pts],
                 points=route_points(pl, best))

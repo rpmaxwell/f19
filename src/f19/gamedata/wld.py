@@ -65,6 +65,13 @@ def parse_wld(th):
     return dict(file=WLD_FILE[th], names=names, records=recs)
 
 
+def record_count(th):
+    """Records the game's target table holds for the theater: .WLD header word 1 (CE 75, GULF 64, NC 46, LIBYA 37).
+    Table layout (memory.mission, memlog 1793126949): record 0 = scratch, 1 and 2 = the generated target slots, then
+    the place records from 0x38, so game record k is place k - 3."""
+    return struct.unpack_from("<H", wld_bytes(th), 2)[0]
+
+
 def places_path(th):
     return S.logs / "theater" / f"{code(th)}.json"
 
@@ -112,7 +119,7 @@ def category_table(b):
 
 
 def categories(th):
-    """{name id: (name, category byte)} of the theater's capitalised names (analysis/ordnance.categories)."""
+    """{name id: (name, category byte)} of the theater's capitalised names (f19.gamedata.wld.categories)."""
     names, cat = category_table(wld_bytes(th))
     return {k: (names[k - 1], cat[k]) for k in range(1, 100) if k <= len(names) and names[k - 1] and not names[k - 1][0].islower()}
 
@@ -125,3 +132,15 @@ def objects_by_category(th):
     for k, c in enumerate(cat):
         if c and k < len(names) and names[k] not in cats.get(c, []): cats.setdefault(c, []).append(names[k])
     return cats
+
+
+def main(argv):
+    """parse-theater: write logs/theater/<code>.json for the given theaters (default: all four)."""
+    for th in [code(a) for a in argv] or list(WLD_FILE):
+        d = write_places(th)
+        print(f"{th}: {len(d['records'])} records, {len(d['names'])} names -> {places_path(th)}")
+
+
+if __name__ == "__main__":
+    import sys
+    main(sys.argv[1:])

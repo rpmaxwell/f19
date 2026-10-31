@@ -5,7 +5,7 @@ settings.end_bin (F19_DATA/game/EGAME.bin, END.bin). When one is missing it is u
 (F19_GAME_DIR/EGAME.EXE, END.EXE) and written there. EGAME's data segment (DGROUP) starts at image offset DS_FILE,
 so ds:X is image[DS_FILE + X]; ds_base() finds it from the runtime library's copyright string (ds:0008).
 
-  python -m f19.gamedata.exe <in.exe> <out.bin>     unpack one .EXE (as analysis/unexepack.py)
+  python -m f19.gamedata.exe <in.exe> <out.bin>     unpack one .EXE 
 """
 import struct
 import sys

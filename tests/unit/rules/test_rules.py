@@ -141,11 +141,8 @@ def test_fuel():
 
 
 def test_fuel_constants_mirror_fuelplan():
-    import re
-    from pathlib import Path
-    src = (Path(__file__).resolve().parents[3] / "analysis/planner/fuelplan.py").read_text()
-    tank, below = re.search(r"^TANK_LB, TRANSFER_BELOW = ([\d.]+), ([\d.]+)", src, re.M).groups()
-    assert (float(tank), float(below)) == (fuel.TANK_LB, fuel.TRANSFER_BELOW)
+    from f19.planner import fuelplan
+    assert (fuelplan.TANK_LB, fuelplan.TRANSFER_BELOW) == (fuel.TANK_LB, fuel.TRANSFER_BELOW)
 
 
 # --- weapons (docs/game/weapons.md) ---------------------------------------------------------------------------------

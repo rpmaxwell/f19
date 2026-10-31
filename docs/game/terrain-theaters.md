@@ -11,7 +11,7 @@ Mountains (decoded 3D terrain), altitude rules and the per-theater data (Gulf, L
   brown/red/dark grey) as impassable with a 1-cell (2 km) margin and never simplifies
   a leg across them; nav.py warns "MOUNTAINS x km AHEAD" from the planner's
   terrain.npz look-ahead along the current heading.
-- **Decoded 2026-10-15** (`analysis/terrain_3d.py`, details in [`mountain_finder.md` §0](#mountain-finder-result-2026-10-15)): the mountains
+- **Decoded 2026-10-15** (`python -m f19.gamedata.terrain`, details in [`mountain_finder.md` §0](#mountain-finder-result-2026-10-15)): the mountains
   are the game's 3D solids from .3DG/.3DT/.3D3. Heights are in altimeter feet; 3D-world Y is flipped
   vs map Y. 5 of the 6 crashes are inside decoded solids (the 6th was not terrain). The planner now
   routes around them at constant low altitude and rewards radar shadow behind ridges; the briefing-map
@@ -44,7 +44,7 @@ Mountains (decoded 3D terrain), altitude rules and the per-theater data (Gulf, L
 ### Gulf / Libya data (kept)
 - Theater codes CE / NC / LB / PG map to CE.WLD / NC.WLD / LIBYA.WLD / GULF.WLD (`analysis/theaters.py`). `read_mission.py`
   and `new_plan.py` detect the theater from the .WLD record table in memory (`--theater auto`, the default); `--theater`
-  still overrides. Place lists: `logs/theater/<code>.json` for all four (`analysis/parse_theater.py`; CE/NC unchanged).
+  still overrides. Place lists: `logs/theater/<code>.json` for all four (`python -m f19.gamedata.wld`; CE/NC unchanged).
 - Airbases: PG Ras Shaffaniyah, As Salamiyah, Al Hufuf, Dhahran, Bahrain; LB Sigonella only; NC Lakselv, Kautokenio, Gallivare.
 - SAM record class differs per theater (record 0's class: CE 294, NC 292, LB 305, PG 308); read_mission finds the radars
   by table structure, so this needs no table.

@@ -19,7 +19,8 @@ the procedures, docs/game/weapons.md "Photo, lock and guidance" for the code):
 
 Gun (2026-10-18, flight-validated; docs/game/weapons.md "Guns"): ccip() = where a bullet fired now would hit.
 
-  python -m f19.rules.weapons        the ordnance tables (as analysis/ordnance.py)
+  python -m f19.rules.weapons          the ordnance tables
+  python -m f19.rules.weapons release  the low-altitude release tables (Maverick drop, photo windows)
 """
 import math
 import struct
@@ -114,7 +115,7 @@ def gun_kill_radius(opp):
 
 # --- printouts (the old CLIs) -----------------------------------------------------------------------------------------
 def print_ordnance():
-    """analysis/ordnance.py: matrix + every theater's target types with their effective values."""
+    """`python -m f19.rules.weapons`: matrix + every theater's target types with their effective values."""
     loadout, m = tables()
     print("weapon            spec qty | " + " ".join(f"{c:2d}" for c in range(NCAT)))
     for w, l in enumerate(loadout):
@@ -131,7 +132,7 @@ def print_ordnance():
 
 
 def print_release():
-    """analysis/release_geometry.py: Maverick drop and photo window tables."""
+    """`python -m f19.rules.weapons release`: Maverick drop and photo window tables."""
     ups = (0, 5, 10, 12, 15, 18, 20)
     print("Maverick ft lost after launch, by nose-up pitch (fs=4; fs=8 in brackets)")
     print("kt   " + "".join(f"+{t:<9}" for t in ups))
@@ -149,4 +150,5 @@ def print_release():
 
 
 if __name__ == "__main__":
-    print_ordnance()
+    import sys
+    (print_release if sys.argv[1:2] == ["release"] else print_ordnance)()

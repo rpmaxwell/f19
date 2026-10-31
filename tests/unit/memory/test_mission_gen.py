@@ -1,7 +1,10 @@
-"""f19.gamedata.mission_gen: START decoding vs f19.memory.mission, the generator vs the pre-WP-4 mission_finder
-(frozen copy), seed search, and the live selection sequence against a fake emulator (no game, no socket).
+"""f19.gamedata.mission_gen: START decoding vs f19.memory.mission, the generator vs what the pre-WP-4 mission_finder produced
+(digest recorded 2026-10-30 from the frozen copy before it was retired), seed search, and the live selection sequence against a
+fake emulator (no game, no socket).
 
 The generator tests need unicorn (uv run --group missions pytest tests/unit/memory) and a START memory image."""
+import hashlib
+import json
 import struct
 
 import pytest
@@ -44,7 +47,7 @@ def test_spec():
 @need_img
 @pytest.mark.parametrize("img", IMAGES, ids=lambda p: p.parent.name)
 def test_decode_agrees_with_memory_layer(img):
-    import read_mission
+    from f19.gamedata import wld
     mem = img.read_bytes()
     ds = G.start_ds(mem)
     assert ds == M.start_ds(mem) is not None
@@ -53,23 +56,23 @@ def test_decode_agrees_with_memory_layer(img):
     assert (m["primary"]["mission"], m["primary"]["record"], m["secondary"]["mission"], m["secondary"]["record"]) == (
         p["mission"], p["target"], s["mission"], s["target"])
     assert m["start"] == br["times"]["start"] and m["deadline"] == br["times"].get("deadline")
-    assert G.wld_names(m["theater"]) == read_mission.WORLD.names(m["theater"])
+    assert G.wld_names(m["theater"]) == wld.places(m["theater"])["names"]
     assert G.block_key(mem[ds + G.BLOCK:ds + G.BLOCK + 0x24]) == G.key(m)[:4]
 
 
 @need_img
 @pytest.mark.parametrize("img", IMAGES[:1], ids=lambda p: p.parent.name)
-def test_generator_matches_legacy_and_finds_seeds(img):
+def test_generator_matches_the_old_finder_and_finds_seeds(img):
     pytest.importorskip("unicorn")
-    import mission_finder_legacy as L
     mem = img.read_bytes()
-    new, old = G.Generator(mem), L.Generator(mem)
-    assert G.decode(mem, new.ds_phys) == L.decode(mem, old.ds_phys)
-    seq_new = [new.generate() for _ in range(3)]
-    assert seq_new == [old.generate() for _ in range(3)]
+    new = G.Generator(mem)
+    def legacy(m):                      # the old finder predates the targets' x, y and sa14 (the SA-14 cell filter)
+        return {**m, **{r: {k: v for k, v in m[r].items() if k not in ("x", "y", "sa14")} for r in ("primary", "secondary")}}
     spec = G.Spec("x10+")
-    assert G.predict(new, spec, 5)[1][:1] == L.predict(old, L.Spec("x10+"), 5)[1][:1]
-    assert G.survey(new, spec, 20)[:2] == L.survey(old, L.Spec("x10+"), 20)[:2]
+    parts = [legacy(G.decode(mem, new.ds_phys)), [legacy(new.generate()) for _ in range(3)],
+             [legacy(m) for m in G.predict(new, spec, 5)[1][:1]], G.survey(new, spec, 20)[:2]]
+    digest = hashlib.sha256(json.dumps(parts, sort_keys=True, default=repr).encode()).hexdigest()[:16]
+    if img.parent.name == "northcape": assert digest == "770bd2e2467d8b41"        # decode, 3 generate()s, predict, survey of the old finder
     seed, m = G.find_seed(spec, new, tries=200)
     assert spec.match(m) and new.from_seed(seed) == m                       # reproducible
     assert new.seed() == struct.unpack_from("<I", mem, new.ds_phys + G.SEED)[0]   # image restored
@@ -117,6 +120,34 @@ def test_select_by_seed_sequence(monkeypatch):
     emu = FakeStart(ds, b""); emu.tap = lambda k, h=0: None              # the Enter didn't land
     with pytest.raises(RuntimeError, match="did not register"):
         G.select_by_seed(emu, FakeReader(), 1, want, ds_phys=ds, log=lambda *a: None)
+
+
+def test_select_from_roster_sequence(monkeypatch):
+    monkeypatch.setattr(G.time, "sleep", lambda s: None)
+    ds = 0x3D2A0
+    want = dict(primary=dict(mission=13, record=40), secondary=dict(mission=14, record=41), fuel_estimate=9000)
+    emu = FakeStart(ds, _block(13, 40, 14, 41)); emu.mem[ds + G.NEW_FLAG] = 1; emu.enters = 1   # the roster: flag 1
+    ok, m = G.select_from_roster(emu, FakeReader(), 0xDEADBEEF, want, ds_phys=ds, log=lambda *a: None)
+    assert ok and m == "MISSION" and emu.pokes == [(ds + G.SEED, struct.pack("<I", 0xDEADBEEF))] and emu.enters == 3
+    emu = FakeStart(ds, b"")                                                   # flag 0: not on the roster
+    with pytest.raises(RuntimeError, match="not on the roster"):
+        G.select_from_roster(emu, FakeReader(), 1, want, ds_phys=ds)
+    assert emu.enters == 0 and emu.pokes == []                                 # nothing sent or written
+
+
+def _m(pt, st, bucket="x9", limit=False, sa=(False, False)):
+    return dict(bucket=bucket, time_limit=limit, primary=dict(type=pt, sa14=sa[0]), secondary=dict(type=st, sa14=sa[1]))
+
+
+def test_same_task_spec():
+    sp = G.SameTaskSpec(no_time_limit=True, length="x9+", sa14_primary=False)
+    assert sp.match(_m(1, 1)) and sp.match(_m(2, 2, "x11"))                  # photo+photo, destroy+destroy
+    assert not sp.match(_m(1, 2)) and not sp.match(_m(3, 3)) and not sp.match(_m(5, 5))   # mixed, supply, intercept
+    assert not sp.match(_m(1, 1, limit=True)) and not sp.match(_m(1, 1, "x8"))           # timed / too short
+    assert not sp.match(_m(1, 1, sa=(True, False)))
+    assert G.SameTaskSpec(kinds=("photo",)).match(_m(1, 1)) and not G.SameTaskSpec(kinds=("photo",)).match(_m(2, 2))
+    with pytest.raises(ValueError): G.SameTaskSpec(kinds=("supply",))
+    assert "both targets photo/destroy" in str(sp) and "no time limit" in str(sp)
 
 
 NC_IMAGE = S.logs / "plan" / "northcape" / "briefing_mem.bin"

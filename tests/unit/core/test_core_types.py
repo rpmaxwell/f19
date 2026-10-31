@@ -74,15 +74,14 @@ def test_systems_flags():
     assert s.gear_up and s.bay_open and s.ir_jammer and not (s.flaps or s.brakes or s.ecm)
 
 
+# every key the old override dicts used (nav's main loop, phases.py, missile_watch.py), taken from their sources on 2026-10-30
+OVERRIDE_KEYS = {"abort_attack", "alt", "alt_cap", "alt_hold", "alt_min", "bank_max", "banner", "cm", "deadband", "done", "escape",
+                 "fighter", "floor", "jam_off", "jam_on", "missile", "no_thr_up", "rate_cap", "roll_hold", "speed_kt", "survival",
+                 "throttle_max", "vs_max", "vs_target", "want"}
+
+
 def test_command_covers_nav_overrides():
-    nav = (REPO / "research/scripts/nav_legacy.py").read_text()
-    keys = set(re.findall(r'\b[mfe]?ov(?:\.get\(|\[)"(\w+)"', nav)) | set(re.findall(r'"(\w+)" in [mfe]?ov\b', nav))
-    src = (REPO / "scripts/phases.py").read_text() + (REPO / "scripts/missile_watch.py").read_text()
-    keys |= set(re.findall(r'\b(?:out|ov)\["(\w+)"\]', src))
-    for m in re.finditer(r'(?:out|ov)\.update\(([^)]*)\)|(?:out|ov) = dict\(([^\n]*)|return dict\((want=[^)]*)\)', src):
-        keys |= set(re.findall(r'\b(\w+)=', next(g for g in m.groups() if g)))
-    mw = src[src.index("return dict(want=c.hdg"):]                     # MissileWatch._ov (two lines)
-    keys |= set(re.findall(r'\b(\w+)=', mw[:mw.index(")\n") + 1].replace("max(0.8, rate)", "")))
+    keys = OVERRIDE_KEYS
     assert {"want", "vs_target", "jam_off", "alt_min", "missile", "abort_attack", "survival"} <= keys
     ov = {k: i for i, k in enumerate(sorted(keys))}; ov["jam_off"] = ["ecm"]
     c = Command.from_overrides(ov)

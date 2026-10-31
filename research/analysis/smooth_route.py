@@ -1,4 +1,4 @@
-"""SUPERSEDED by analysis/planner (python analysis/planner <plan_dir>); kept to reproduce old plans.
+"""SUPERSEDED by src/f19/planner (python -m f19.planner <plan_dir>); kept to reproduce old plans.
 
 Build a nav route from hand-placed corners, rounding every corner to the turn radius.
 
@@ -25,7 +25,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from radar_los import visible
-from territory import side, grid
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.gamedata.wld import side, grid
 
 ROOT = Path(__file__).resolve().parent.parent
 K, CRUISE_FT, CLEAR_KM, STEP_KM = 64.0, 450.0, 2.0, 4.0

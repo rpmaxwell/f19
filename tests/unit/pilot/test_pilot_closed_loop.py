@@ -5,7 +5,7 @@ leaves a key held. The toy's numbers only echo nav's tuning assumptions (a held 
 tap is 10 %); nothing here says how F-19 itself responds."""
 import math
 
-from pilot_equiv import KeyLog
+from pilot_worlds import KeyLog
 from f19.cli import fly
 from f19.core.clock import ManualClock
 from f19.core.geometry import bearing_deg, wrap_deg

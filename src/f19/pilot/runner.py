@@ -33,9 +33,11 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from f19.core.geometry import dist, wrap_deg as wrap
+from f19.core.clock import FrameClock
 from f19.core.types import Action, Frame
-from f19.core.units import K
+from f19.core.units import GAME_PER_WALL, K
 from f19.memory import reader as R
+from f19.pilot.eject import LevelOut
 from f19.rules import radar as rg
 from f19.rules.missiles import parse_missile_world
 from f19.rules.terrain import terrain_ahead_probe  # noqa: F401  (re-exported: the cli imports it from here)
@@ -52,9 +54,10 @@ class Reads:
     @property
     def db(self): return self.reader.emu
 
-    def enrich(self, state, records=(), events=False, projectiles=False, gun=False):
+    def enrich(self, state, records=(), events=False, projectiles=False, gun=False, cam=False):
         kw = {}
         if records: kw["target_records"] = tuple((r, *R.read_target(self.db, r)) for r in records)
+        if cam: kw["cam"] = R.read_trackcam_view(self.db)
         if events: kw["events"] = tuple(tuple(e) for e in R.read_events(self.db))
         if projectiles:
             kw["projectiles"] = tuple((int.from_bytes(r[0x10:0x12], "little"), int.from_bytes(r[0xE:0x10], "little"))
@@ -69,6 +72,8 @@ class Reads:
     def missile_world(self, full=True): return parse_missile_world(R.missile_world_memory(self.db, full))
 
     def time_mult(self): return R.read_time_mult(self.db)
+
+    def frame_fs(self): return R.read_frame_fs(self.db)
 
     def events(self): return R.read_events(self.db)
 
@@ -158,10 +163,12 @@ class Runner:
     for the MOUNTAIN banner; site_names {target record index + 3: "place system"} for the combat log; memlog: MemLog;
     say(text): status lines (not-in-flight, exit)."""
     DEAD_EXIT_S, COMBAT_S, PERIOD_S, PERIOD_MEMLOG_S = 10.0, 3.0, 0.15, 0.05
+    exit_on_done = False                             # fly --exit-on-done: leave the loop once landed and stopped (mission loop, 2026-10-30)
+    LANDED_EXIT = "nav: landed and stopped - done"
 
     def __init__(self, reader, controls, arbiter, loops, bus, clock, route_provider, *, ctx=None, reads=None,
                  memlog=None, sleep=time.sleep, side=None, terrain=None, site_names=None, say=print, event_list_s=1.0,
-                 wall=time.time, allow_eject=False):
+                 wall=time.time, allow_eject=True):
         from f19.core.types import FlightContext
         self.reader, self.controls, self.arb, self.loops, self.bus = reader, controls, arbiter, loops, bus
         self.clock, self.routes = clock, route_provider
@@ -173,6 +180,7 @@ class Runner:
         self.event_list_s = event_list_s
         self.allow_eject = allow_eject
         self.dead = 0.0
+        self.game_clock, self._gc_log, self._gc_t0 = FrameClock(), 0.0, None   # measures only; nothing flies on it (core.clock.FrameClock)
         self.phase_log = []
         self._ev_seen, self._ev_next = None, 0.0
         self._evl_next, self.event_list = 0.0, None
@@ -255,6 +263,28 @@ class Runner:
     def _event(self, now, text, events):
         self.phase_log.append(f"{now:.0f} {text}"); events.append(Event(now, text))
 
+    SPEED_BAND = (0.8, 1.25)                           # measured / tuned game speed outside this is flagged in the clock line
+    CLOCK_WARMUP_S = 20.0                              # no clock line (and no flag) before this much measurement
+
+    def _measure_clock(self, now, events):
+        """FrameClock: game time and the game/real ratio from the frame counter (measure-only). Every 120 s a line says it, relative to
+        the speed everything was tuned at (core.units.GAME_PER_WALL x the time byte); outside SPEED_BAND the line says so, because every loop
+        gain and hold time in this package is in real seconds at that speed."""
+        try: frame, fs = self.reads.frame_fs()
+        except Exception: return                       # a replay source or a failed read: no measurement this tick
+        if self._gc_t0 is None: self._gc_t0 = now
+        self.game_clock.feed(frame, fs, now)
+        r = self.game_clock.ratio
+        if r is None or now < self._gc_log or now - self._gc_t0 < self.CLOCK_WARMUP_S: return   # the first seconds are noisy (0.5-2.6 seen)
+        self._gc_log = now + 120.0
+        try: tm = self.reads.time_mult()
+        except Exception: tm = 1.0
+        rel = r / (GAME_PER_WALL * tm)
+        text = f"clock: game {r:.2f}x real, time byte {tm:g} = {rel:.2f} of the tuned speed (game t {self.game_clock.gt:.0f} s)"
+        if not self.SPEED_BAND[0] <= rel <= self.SPEED_BAND[1]:
+            text += f" - OUTSIDE {self.SPEED_BAND[0]}-{self.SPEED_BAND[1]}: the loops' timings are off by this factor"
+        self._event(now, text, events)
+
     def tick(self, now=None):
         now = self.clock.now() if now is None else now
         m, ctx = self.modes, self.ctx
@@ -274,6 +304,7 @@ class Runner:
         self.dead = 0.0
         state = dataclasses.replace(state, time_mult=self.reads.time_mult())
         events = []
+        self._measure_clock(now, events)
         self.controls.service(now)
         route = self.routes.current()
         if ctx.route is not route:                   # a new plan version (FlightDirector): FlyLeg joins it from its start
@@ -281,10 +312,13 @@ class Runner:
         hdg_on = m.hdg
         dec = self.arb.step(state, ctx)
         dec = self._gate_eject(self._direct(state, dec, ctx))
+        dec = self._level_then_eject(dec)
         for e in dec.events: self._event(now, e, events)
         self.controls.apply(dec.command, state, ctx, now)
         for k in dec.key_ups: self.controls.up(k)
         if dec.handover or dec.exit: self.release(roll_level=hdg_on)
+        if self.exit_on_done and dec.phase == "landed" and not dec.exit:
+            return TickResult(now, True, dec, exit=self.LANDED_EXIT, events=events)
         if dec.exit:
             return TickResult(now, True, dec, exit=dec.exit, events=events)
         if self.loops.airborne(state):
@@ -316,14 +350,24 @@ class Runner:
         return dec
 
     def _gate_eject(self, dec):
-        """EJECT (Shift+F10) goes to the game only with allow_eject (fly --allow-eject): the key is untried live and a
-        wrong "no landing" decision would end the mission. Suppressed: the action is dropped, there is no exit (the
+        """EJECT (Shift+F10) goes to the game unless allow_eject is off (fly --no-eject; on by default since the key was
+        tried live 2026-10-29, after _level_then_eject). Suppressed: the action is dropped, there is no exit (the
         flight goes on, the director stays terminal and plans no more), and the mission log and the banner say so."""
         if self.allow_eject or Action.EJECT not in dec.command.actions: return dec
         dec.command = dataclasses.replace(dec.command, actions=tuple(a for a in dec.command.actions if a is not Action.EJECT),
-                                          banner="  DIRECTOR: WOULD EJECT - suppressed (no --allow-eject), still flying", done=None)
+                                          banner="  DIRECTOR: WOULD EJECT - suppressed (--no-eject), still flying", done=None)
         dec.exit = None
-        dec.events.append("EJECT suppressed: --allow-eject not given - still flying")
+        dec.events.append("EJECT suppressed: --no-eject given - still flying")
+        return dec
+
+    def _level_then_eject(self, dec):
+        """A permitted EJECT is not sent as the tick's key: pilot.eject.LevelOut first rolls and pitches the plane level
+        (the death roll is made at the key and a level plane cannot fail it), then presses Shift+F10 on the read after it
+        is confident. Blocks until the key is out (at most LevelOut.MAX_S)."""
+        if Action.EJECT not in dec.command.actions: return dec
+        dec.command = dataclasses.replace(dec.command, actions=tuple(a for a in dec.command.actions if a is not Action.EJECT))
+        res = LevelOut(self.controls, self.reader, self.sleep, self.wall, self.say).run()
+        dec.events.extend(f"EJECT sequence: {line}" for line in res.log)
         return dec
 
     # ----------------------------------------------------------------------------------------------- telemetry

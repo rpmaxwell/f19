@@ -60,7 +60,7 @@ def load_context(theater=None, route=None, wps=None, mission=None, logs=None):
         t = np.load(rdir / "terrain.npz")
         if "height_game" in t: heights, step = t["height_game"], int(t["height_step"])
     tz = logs / "theater" / f"{th}_terrain.npz"
-    if heights is None and th and tz.exists():                 # theater-wide (analysis/terrain_3d.py)
+    if heights is None and th and tz.exists():                 # theater-wide (`python -m f19.gamedata.terrain`)
         t = np.load(tz); heights, step = t["height_ft"], int(t["step_wp"])
     places = {}
     tj = logs / "theater" / f"{th}.json"

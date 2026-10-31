@@ -12,7 +12,7 @@ import random
 
 import pytest
 
-from pilot_equiv import KeyLog, product
+from pilot_worlds import KeyLog, product
 import harness as H  # noqa: E402
 from f19.cli import fly
 from f19.core.clock import ManualClock
@@ -35,17 +35,23 @@ def _m(x):
     return x
 
 
+# run -> (digest of the old missile_game.parse over every snapshot, snapshots), recorded 2026-10-30 before that module was retired
+GOLD_PARSE = {"1792546698": ("4d18dae4673de0c3", 313), "1792609731": ("7c75c400058eaac3", 404), "1792715432": ("7234b38343c2da21", 787)}
+
+
 @need_fix
 @pytest.mark.parametrize("run_id", list(RUNS))
-def test_parse_missile_world_matches_missile_game(run_id, egame):
-    G = product.missile_game()
+def test_parse_missile_world_matches_the_old_parse(run_id, egame):
+    import hashlib
+    import json
     rr = ReplayReader(H.FIX / "logs" / "memlog" / run_id)
-    n = 0
+    h, n = hashlib.sha256(), 0
     for i in range(len(rr)):
         rr.seek_index(i)
         get = MR.missile_world_memory(rr.emu, full=bool(i % 2))
-        assert _m(parse_missile_world(get)) == _m(G.parse(get))
+        h.update(json.dumps(_m(parse_missile_world(get)), sort_keys=True, default=repr).encode())
         n += 1
+    assert (h.hexdigest()[:16], n) == GOLD_PARSE[run_id]
     assert n > 200
 
 
@@ -211,3 +217,39 @@ def test_memlog_snapshots(egame):
     assert len(snaps) == 1 and len(snaps[0].data) == 0xC000 and snaps[0].t == round((5.0 + 8.0) / 2, 2)
     lo = ml.layout.windows[0][1]
     assert snaps[0].data[:256] == rr.emu.peek(lo, 256)
+
+
+def _clock_runner(tm, rate):
+    """A Runner with only what _measure_clock touches: frame counter advancing `rate` game s per real s (fs 8: 0.25 game s a frame)."""
+    from f19.core.clock import FrameClock
+    from f19.pilot.runner import Runner
+    r = Runner.__new__(Runner)
+    r.game_clock, r._gc_log, r._gc_t0, r.phase_log = FrameClock(), 0.0, None, []
+    st = {"wall": 0.0, "frame": 1000}
+    class FakeReads:
+        def frame_fs(self_): return st["frame"], 8
+        def time_mult(self_): return tm
+    r.reads = FakeReads()
+    out = []
+    for i in range(30):                                         # 30 real seconds (the first 20 are warm-up: no line)
+        st["wall"] = float(i); st["frame"] = 1000 + int(round(i * rate * 4))
+        r._measure_clock(st["wall"], out)
+    return out
+
+
+def test_clock_line_reports_the_speed_relative_to_the_tuned_one():
+    out = _clock_runner(1.0, 2.5)                               # 10 frames a real second (whole frames), 2.5 vs the tuned 2.46
+    assert len(out) == 1 and "time byte 1 = 1.02 of the tuned speed" in out[0].text and "OUTSIDE" not in out[0].text
+    out = _clock_runner(2.0, 5.0)                               # TIME x2: twice the rate, the byte says 2: still the tuned speed
+    assert "time byte 2 = 1.02 of the tuned speed" in out[0].text and "OUTSIDE" not in out[0].text
+
+
+def test_clock_line_waits_for_a_real_measurement():
+    """The first reading of a run is noisy (0.5-2.6 seen): nothing is said, and nothing is flagged, in the first CLOCK_WARMUP_S."""
+    from f19.pilot.runner import Runner
+    assert all(e.t >= Runner.CLOCK_WARMUP_S for e in _clock_runner(1.0, 1.5)) and _clock_runner(1.0, 1.5)
+
+
+def test_clock_line_flags_a_different_emulator_speed():
+    out = _clock_runner(1.0, 1.5)                               # a slower machine: 0.61 of the speed the loops were tuned at
+    assert "0.61 of the tuned speed" in out[0].text and "OUTSIDE 0.8-1.25" in out[0].text

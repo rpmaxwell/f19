@@ -8,8 +8,9 @@ Logs to logs/alt_hold/mem_<start>.csv.
 import csv, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
-from f19_state import read_state
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
+from f19.memory.reader import read_state
 
 D = Path(__file__).resolve().parent.parent / "logs" / "alt_hold"; D.mkdir(parents=True, exist_ok=True)
 STOP, TARGET = D / "STOP", D / "TARGET"

@@ -257,7 +257,7 @@ def _state(alt=1000, x=10000.0, y=20000.0, hdg=0.0):
 
 def _runner(provider, n_ticks_state):
     from test_pilot_runner import FakeReader, FakeReads
-    from pilot_equiv import KeyLog
+    from pilot_worlds import KeyLog
     from f19.cli import fly
     clock = ManualClock(1000.0)
     a = fly.resolve(fly.parser().parse_args(["--hdg", "--alt", "1000"])); a.dry_run = True

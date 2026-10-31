@@ -1,4 +1,7 @@
-"""The layout engine: nav_tui's stack() and _layout() reproduced by default.toml at every size; the file format."""
+"""The layout engine: the old nav_tui's stack() and _layout() reproduced by default.toml at every size; the file format.
+The old HUD (scripts/nav_tui.py) is retired: its results are stored as digests (recorded 2026-10-30), over the same
+random stacks and every (width, height, zoom) the test once compared one by one."""
+import hashlib
 import random
 import types
 
@@ -7,35 +10,32 @@ import pytest
 from f19.hud import layout as L
 
 
-def _old():
-    import legacy_tui
-    return legacy_tui.load()
+GOLD = {"stack": "708d5a4cecbf5012", "layout0": "840d64dd3d176e6a", "layout1": "fc8a26f39090a669"}
 
 
-def test_stack_matches_nav_tui(egame):
-    nt = _old()
+def test_stack_matches_old_nav_tui():
     rnd = random.Random(7)
     names = ["map", "nav", "radars", "aircraft", "fuel", "score", "log"]
+    h = hashlib.sha256()
     for _ in range(3000):
         k = rnd.randint(1, 7)
         items = [(n, rnd.choice([None, rnd.randint(0, 12)]), rnd.randint(0, 10)) for n in rnd.sample(names, k)]
         y0 = rnd.randint(0, 5); y1 = y0 + rnd.randint(0, 80)
-        old = nt.stack(0, 10, y0, y1, items)
         new = L.stack(y0, y1, [(n, w, m, n == "map") for n, w, m in items])
-        assert {n: (0, a, 10, b) for n, (a, b) in new.items()} == old, (items, y0, y1)
+        h.update(repr(sorted({n: (0, a, 10, b) for n, (a, b) in new.items()}.items())).encode())
+    assert h.hexdigest()[:16] == GOLD["stack"]
 
 
 @pytest.mark.parametrize("index", [0, 1])
-def test_default_layout_matches_nav_tui(egame, index):
-    nt = _old()
+def test_default_layout_matches_old_nav_tui(index):
     ls = L.load("default")
+    h = hashlib.sha256()
     for W in range(30, 240, 3):
         for H in range(8, 80, 3):
             for zoom in (False, True):
-                me = types.SimpleNamespace(zoomed=zoom, focus="radars", layout=index)
-                old = nt.UI._layout(me, W, H)
                 new = ls.rects(index, W, H, "radars" if zoom else None)
-                assert {k: b.as_tuple() for k, b in new.items()} == old, (W, H, index, zoom)
+                h.update(repr(sorted({k: b.as_tuple() for k, b in new.items()}.items())).encode())
+    assert h.hexdigest()[:16] == GOLD[f"layout{index}"]
 
 
 def test_default_file():

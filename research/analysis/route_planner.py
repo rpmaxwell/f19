@@ -1,4 +1,4 @@
-"""SUPERSEDED by analysis/planner (python analysis/planner <plan_dir>); kept to reproduce old plans.
+"""SUPERSEDED by src/f19/planner (python -m f19.planner <plan_dir>); kept to reproduce old plans.
 
 Stealth route planner for the F-19 briefing map.
 

@@ -13,7 +13,8 @@ from pathlib import Path
 from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hud_ocr
-from dosbox_automation import Dosbox
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
 
 ROOT = Path(__file__).resolve().parent.parent
 WIN = sys.argv[1]

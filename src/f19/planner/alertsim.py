@@ -10,6 +10,11 @@ Unknown at planning time: each site's pulse phase and the frame counter (duty wi
 SCENARIOS random draws (fixed seed): "worst" = sites always active, "expected" = duty windows as the
 game schedules them (radar_game.duty_active). Not modelled: the global return lockout (skips a few
 pulses), aircraft radars and visual IDs, the homing-missile gate.
+
+SA-14 cells (docs/game/memory-map.md, 0x56ec): every SA14_TICK_S (16 ticks = 32 game s) of daylight the plane is inside a
+live cell, an SA-14 spawns at a random point of that cell and flies if that point is more than (4 - opp) x 256 units away
+-> "SA-14 fired" and the network alert, same as a SAM launch. Modelled per scenario with its own random stream (the radar
+draws are unchanged); the enemy slot being free is assumed (an earlier SA-14 is long gone after 256 s).
 """
 import numpy as np
 
@@ -18,12 +23,17 @@ from f19.rules import radar as rg
 SCENARIOS = 48
 WINDOW_S = 1024 / 4 * 2 / 2     # 1024 frames at ~4 frames per tick (2 game s): ~512 s
 NETWORK_S = 120.0               # duty threshold raised (+3) this long after a network alert
+SA14_TICK_S = 32.0              # spawn check period inside a live cell
+SA14_CELL = 2048                # 32 km, game units
 
 
 def simulate(world, radar, steps, seed=1):
     """steps: fuelplan.integrate()["steps"]. -> dict(sites=[...], worst={...}, expected={...})."""
-    if not steps or not radar.R:
+    if not steps:
         return dict(sites=[], n=0)
+    sa14 = _sa14(world, steps, seed)
+    if not radar.R:
+        return dict(sites=[], n=0, sa14=sa14)
     t = np.array([s["t"] for s in steps])
     X = np.array([s["xy"][0] for s in steps]); Y = np.array([s["xy"][1] for s in steps])
     UX = np.array([s["u"][0] for s in steps]); UY = np.array([s["u"][1] for s in steps])
@@ -48,8 +58,9 @@ def simulate(world, radar, steps, seed=1):
     rng = np.random.default_rng(seed)
     res = {mode: [] for mode in ("worst", "expected")}
     for mode in res:
-        for _ in range(SCENARIOS):
-            res[mode].append(_run(t, M, in_sam, far_field, opp, war, idx, T_end, rng, always=(mode == "worst"), E=E))
+        for sc in range(SCENARIOS):
+            res[mode].append(_run(t, M, in_sam, far_field, opp, war, idx, T_end, rng, always=(mode == "worst"), E=E,
+                                  sa14_t=sa14["launches"][sc]))
     sites = []
     for n, (pos, typ, kind, name) in enumerate(radar.R):
         row = dict(name=name, type=typ, kind=kind, min_margin_km=None)
@@ -67,12 +78,14 @@ def simulate(world, radar, steps, seed=1):
         row["near_steps"] = int((M[n] > -radar.M).sum())
         row["best_margin"] = float(M[n].max())
         sites.append(row)
-    summary = {mode: dict(p_any_net=float(np.mean([any(f[0] is not None for f in r["first"]) for r in runs])),
-                          p_any_launch=float(np.mean([any(x is not None for x in r["launch"]) for r in runs])),
+    # an SA-14 launch is a network alert and a launch on us, like a SAM's
+    summary = {mode: dict(p_any_net=float(np.mean([any(f[0] is not None for f in r["first"]) or bool(r["sa14"]) for r in runs])),
+                          p_any_launch=float(np.mean([any(x is not None for x in r["launch"]) or bool(r["sa14"]) for r in runs])),
                           expected_ids=float(np.mean([sum(x is not None for x in r["id"]) for r in runs])),
                           max_alert=int(max(max(r["max"]) for r in runs)))
                for mode, runs in res.items()}
-    return dict(sites=sites, summary=summary, n=SCENARIOS, t=t)
+    net = {mode: [r["net"] for r in runs] for mode, runs in res.items()}      # per scenario: when a network alert was raised
+    return dict(sites=sites, summary=summary, n=SCENARIOS, t=t, sa14=sa14, net=net)
 
 
 def _first(vals):
@@ -80,17 +93,49 @@ def _first(vals):
     return min(v) if v else None
 
 
-def _run(t, M, in_sam, far_field, opp, war, idx, T_end, rng, always, E=None):
+def _sa14(world, steps, seed):
+    """SA-14 spawn checks along the route: dict(minutes in live cells, checks, p_launch, first, launches) where launches[scenario]
+    is the sorted list of game seconds an SA-14 flies in that scenario (a spawn point more than (4 - opp) x 256 units away)."""
+    t = np.array([s["t"] for s in steps]); xy = np.array([s["xy"] for s in steps], float)
+    live = np.asarray(world.sa14(xy[:, 0], xy[:, 1]), bool)
+    dt = np.diff(t, append=t[-1])
+    out = dict(minutes=float(dt[live].sum() / 60), checks=0, p_launch=0.0, p_per_check=0.0, first=None, launches=[[] for _ in range(SCENARIOS)])
+    if not live.any(): return out
+    rng = np.random.default_rng(seed + 14)
+    near, checks = (4 - world.opp) * 256, 0.0
+    for sc in range(SCENARIOS):
+        for tk in np.arange(rng.uniform(0, SA14_TICK_S), t[-1], SA14_TICK_S):
+            k = min(len(t) - 1, int(np.searchsorted(t, tk)))
+            if not live[k]: continue
+            checks += 1 / SCENARIOS
+            c = (xy[k] // SA14_CELL) * SA14_CELL                        # spawn point: uniform in the player's cell
+            p = c + rng.uniform(0, SA14_CELL, 2)
+            if np.hypot(*(p - xy[k])) > near: out["launches"][sc].append(float(tk))
+    out["checks"] = round(checks, 1)
+    out["p_launch"] = float(np.mean([bool(l) for l in out["launches"]]))
+    firsts = [l[0] for l in out["launches"] if l]
+    out["first"] = float(min(firsts)) if firsts else None
+    out["p_per_check"] = float(np.mean([len(l) for l in out["launches"]]) / checks) if checks else 0.0
+    return out
+
+
+def _run(t, M, in_sam, far_field, opp, war, idx, T_end, rng, always, E=None, sa14_t=()):
     ns = len(idx)
+    pending = list(sa14_t); sa14_fired = list(sa14_t)
     alert = np.zeros(ns, int)
     nxt = rng.uniform(0, 32, ns)                               # first pulse of each site
     k0 = rng.integers(0, 8); w0 = rng.uniform(0, WINDOW_S)      # frame counter: window index and phase
     net_until = -1.0
     first = [[None, None, None] for _ in range(ns)]
     launch = [None] * ns; ids = [None] * ns; mx = np.zeros(ns, int)
+    net = []                                                   # game s of every network alert raised (fighters hunt after it)
     while True:
         n = int(np.argmin(nxt)); tp = nxt[n]
         if tp > T_end: break
+        while pending and pending[0] <= tp:                    # SA-14 fired: the network alert, as from a SAM
+            floor = (war + opp) * 16 - 16
+            net.append(pending[0])
+            alert = np.maximum(alert, floor); net_until = max(net_until, pending.pop(0) + NETWORK_S)
         k = min(len(t) - 1, int(np.searchsorted(t, tp)))
         win = k0 + int((tp + w0) // WINDOW_S)
         active = always or rg.duty_active(idx[n], win << 10, alert[n], False, war, tp < net_until)
@@ -100,7 +145,7 @@ def _run(t, M, in_sam, far_field, opp, war, idx, T_end, rng, always, E=None):
             if seen and alert[n] > 0x7F:
                 if first[n][0] is None: first[n][0] = tp
                 floor = (war + opp) * 16 - 16
-                alert = np.maximum(alert, floor); net_until = tp + NETWORK_S
+                alert = np.maximum(alert, floor); net_until = tp + NETWORK_S; net.append(tp)
             if alert[n] > 0xC0 and first[n][1] is None: first[n][1] = tp
             if alert[n] >= 0xFA and first[n][2] is None: first[n][2] = tp
             if seen and alert[n] > 0xC0 and far_field[k]:
@@ -108,4 +153,4 @@ def _run(t, M, in_sam, far_field, opp, war, idx, T_end, rng, always, E=None):
                 elif in_sam[n, k] and launch[n] is None: launch[n] = tp
             mx[n] = max(mx[n], alert[n])
         nxt[n] = tp + rg.pulse_period_ticks(alert[n]) * 2.0
-    return dict(max=mx, first=first, launch=launch, id=ids)
+    return dict(max=mx, first=first, launch=launch, id=ids, sa14=sa14_fired, net=sorted(net))

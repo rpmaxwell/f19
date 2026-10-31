@@ -16,7 +16,7 @@ from f19.core.settings import settings as S  # noqa: E402
 
 DEST = S.data / "fixtures" / "replay"
 
-# memlog run -> nav run (nearest epoch, as analysis/memlog_load.py picks it), plan dir (route + terrain it flew),
+# memlog run -> nav run (nearest epoch, as f19.telemetry.memlog_load picks it), plan dir (route + terrain it flew),
 # snapshot windows (epoch s, inclusive; None = whole run) and what each window covers.
 RUNS = {
     "1792609731": dict(nav="1792609719", plan="ce_katowice_1021_1458", covers="takeoff, Maverick attack, terrain escape (turn + climb)",

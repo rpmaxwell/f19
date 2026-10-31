@@ -47,7 +47,10 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 import memdump_loop as ml
 from tag_capture import capture_and_log
-from dosbox_automation import Dosbox, DEFAULT_HOST, DEFAULT_PORT
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
+from f19.core.settings import settings as _S
+DEFAULT_HOST, DEFAULT_PORT = _S.host, _S.port
 
 DEFAULT_REPEATS = 10
 DEFAULT_SETTLE = 1.0

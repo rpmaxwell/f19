@@ -1,11 +1,11 @@
 """The WP-7b additions to f19.core.types (additive: tests/unit/core covers the rest), the behaviors' protocol
-conformance, the layer rule for behaviors (core + rules only), and that the equivalence harness does catch a change."""
+conformance, the layer rule for behaviors (core + rules only), and that the dual key-sender check (controls_dual_plugin) sees a change in the FakeControls contract."""
 import ast
 from pathlib import Path
 
 import pytest
 
-from pilot_equiv import FakeControls, gamestate, projectile, run_phase, world
+from pilot_worlds import FakeControls, gamestate, projectile, run_new, world
 import test_pilot_phases as TP
 from f19.core.clock import ManualClock
 from f19.core.types import Action, Behavior, Command, FlightContext, GameState, Toggle
@@ -64,26 +64,18 @@ def test_behaviors_import_only_core_and_rules():
 
 
 def test_harness_catches_a_change(egame):
-    """Mutations the comparison must flag: a rotation speed, the photo bay's re-press settle, and the adapter's debounce."""
-    class VR111(Takeoff): VR = 116                       # 6 kt a tick: crosses one tick later
+    """test_pilot_controls re-runs the scenarios with a dual adapter (Controls next to FakeControls) and requires zero mismatches,
+    except in THIS test, where the adapter itself is mutated (every tap held 0.05 s longer): Controls does not follow, so the dual
+    check has to see a difference (and does: it asserts mismatches here). On its own the test checks that the mutation shows in
+    the key stream."""
     w, after = TP.takeoff_world()
-    rep = run_phase(TP.ph.Takeoff(TP.ph.Throttle(), 190.0, 450), VR111(190.0, 450), TP.ticks(w, 600), TP.old_step,
-                    extra=lambda b: (b.state, b.t0), after=after)
-    assert not rep.all_equal
-    class Retry2(Attack): BAY_RETRY_S = 2.0
-    w, after = TP.attack_world("photo", opp=3, lose_bay=1, alt=250, pitch=3.0)
-    old = TP.ph.Attack("primary", "photo", TP.TGT, TP.T_REC, None, 2.0, TP.ph.Throttle())
-    rep = run_phase(old, Retry2("primary", "photo", TP.TGT, TP.T_REC, None, 2.0), TP.ticks(w, 4000), TP.old_step, after=after)
-    assert not rep.all_equal
-    saved = FakeControls._action
-    def no_debounce(self, a, state, now):
-        if isinstance(a, Toggle): a = Toggle(a.action, a.on, 0.0)
-        return saved(self, a, state, now)
-    FakeControls._action = no_debounce
+    plain = run_new(Takeoff(190.0, 450), TP.ticks(w, 600), after=after)
+    saved = FakeControls._tap
+    def longer(self, key, hold=0.2): return saved(self, key, hold + 0.05)
+    FakeControls._tap = longer
     try:
-        w, after = TP.takeoff_world(lose_first_brakes=True)
-        rep = run_phase(TP.ph.Takeoff(TP.ph.Throttle(), 190.0, 450), Takeoff(190.0, 450), TP.ticks(w, 600), TP.old_step,
-                        after=after)
-        assert not rep.all_equal
+        w, after = TP.takeoff_world()
+        mutated = run_new(Takeoff(190.0, 450), TP.ticks(w, 600), after=after)
     finally:
-        FakeControls._action = saved
+        FakeControls._tap = saved
+    assert mutated.keys != plain.keys

@@ -1,15 +1,19 @@
-"""core.theater against analysis/theaters.py, planner/plan.py, read_mission.py, terrain_3d.py, territory.py, score.py."""
+"""core.theater against gamedata.wld / terrain, planner.planner and rules.scoring (and the takeoff-heading rule read_mission once held)."""
 import pytest
 
-from core_legacy import extract
 from f19.core.theater import Theater
 
-th = extract("analysis/theaters.py", "WLD_FILE", "ALIASES", "code")
-plan = extract("analysis/planner/plan.py", "THEATER_INDEX", "game_takeoff_heading")
-rm = extract("scripts/read_mission.py", "THEATER_INDEX", "takeoff_heading")
-t3d = extract("analysis/terrain_3d.py", "THEATER_INDEX")
-terr = extract("analysis/territory.py", "WLD")
-score = extract("analysis/planner/score.py", "THEATER")
+from f19.gamedata import terrain as _terrain, wld as _wld
+from f19.planner import planner as _planner
+from f19.rules import scoring as _scoring
+
+th = {"WLD_FILE": _wld.WLD_FILE, "ALIASES": _wld.ALIASES, "code": _wld.code}
+plan = {"THEATER_INDEX": _planner.THEATER_INDEX, "game_takeoff_heading": _planner.game_takeoff_heading}
+rm = {"THEATER_INDEX": {t.index: t.value for t in Theater},       # read_mission's index -> code table was the inverse of the planner's
+      "takeoff_heading": lambda idx, carrier: (0.0 if idx & 1 else 180.0) + (0x400 * 360 / 65536 if carrier else 0.0)}   # and its rule
+t3d = {"THEATER_INDEX": _terrain.THEATER_INDEX}
+terr = {"WLD": _wld.WLD_FILE}
+score = {"THEATER": _scoring.THEATER}
 
 NAMES = ["CE", "ce", "NC", "nc", "LB", "lb", "PG", "pg", "LIBYA", "Libya", "GULF", "gulf", "Persian Gulf", "PERSIAN_GULF",
          "persian_gulf", "Central Europe", "central_europe", "EUROPE", "North Cape", "north_cape", " ce ", "GULF.WLD",

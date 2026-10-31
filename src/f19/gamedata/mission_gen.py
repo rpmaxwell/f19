@@ -17,13 +17,13 @@ Layering: gamedata may import only core, so this module carries its own small de
 of the .WLD name list (memory.mission and analysis/theaters have the same; tests/unit/memory checks they agree).
 """
 import random
-import re
 import struct
 import time
 from collections import Counter
 
 from f19.core.settings import settings as _settings
 from f19.core.theater import Theater
+from f19.gamedata import wld as _wld
 
 # START data segment (same values as f19.memory.addresses START_*; that layer can't be imported from here)
 DGROUP = 0x1010
@@ -90,15 +90,22 @@ _NAMES = {}
 
 
 def wld_names(theater, game_dir=None):
-    """The .WLD name list (name_id i -> names[i - 1]), as analysis/theaters.parse_wld reads it.
-    TODO(after WP-3 merges): use gamedata's .WLD loader."""
+    """The .WLD name list (name_id i -> names[i - 1]), found with gamedata.wld.name_start (same list as wld.parse_wld)."""
     th = Theater.parse(theater)
     key = (th, str(game_dir or _settings.game_dir))
     if key not in _NAMES:
         d = ((game_dir or _settings.game_dir) / th.wld).read_bytes()
-        first = re.search(rb"[A-Z][a-z]{2,}\x00", d).start()
+        first = _wld.name_start(d)
         _NAMES[key] = [n.decode("latin-1") for n in d[first:].split(b"\x00")]
     return _NAMES[key]
+
+
+def sa14_cell(theater, x, y):
+    """(cx, cy) when the 32 km cell holding the point (game units) is an SA-14 cell (territory byte bit 0x10: by day it fires
+    SA-14s at a plane inside it, docs/game/memory-map.md "SA-14 cells"), else None."""
+    from .wld import grid
+    cx, cy = int(x) >> 11, int(y) >> 11
+    return (cx, cy) if theater and 0 <= cx < 16 and 0 <= cy < 16 and grid(theater)[cy, cx] & 0x10 else None
 
 
 def decode(mem, ds, names=None):
@@ -117,7 +124,8 @@ def decode(mem, ds, names=None):
     def place(i):
         n, x, y, kind, f1, f2, f3, cls = struct.unpack_from("<8H", mem, ds + START_RECS + 16 * i)
         nm = lambda k: names[k - 1] if 0 < k <= len(names) else ""
-        return dict(place=nm(n) or ("carrier" if f1 & 0x200 else ""), object=nm(cls & 0x7F) or f"class {cls}", record=i)
+        return dict(place=nm(n) or ("carrier" if f1 & 0x200 else ""), object=nm(cls & 0x7F) or f"class {cls}", record=i,
+                    x=x, y=y, sa14=sa14_cell(th, x, y))
     timed = bool(deadline_raw) or p["type"] in (5, 6, 7)
     return dict(theater=th, primary=dict(mission=p["mission"], type=p["type"], **place(p["target"])),
                 secondary=dict(mission=s["mission"], type=s["type"], **place(s["target"])),
@@ -141,10 +149,12 @@ def block_key(b):
 
 def describe(m):
     task = lambda b: MISSION_TYPE.get(b["type"], f"type {b['type']}")
+    cells = ", ".join(f"{r} in SA-14 cell {m[r]['sa14']}" for r in ("primary", "secondary") if m[r].get("sa14"))
     return (f"{m['takeoff']} -> #{m['primary']['mission']} {task(m['primary'])} {m['primary']['object']} at {m['primary']['place']}"
             f" -> #{m['secondary']['mission']} {task(m['secondary'])} {m['secondary']['object']} at {m['secondary']['place']}"
             f" -> {m['landing']};  fuel est {m['fuel_estimate']} lb ({m['length_km']} km, {m['bucket']})"
-            + (f";  DEADLINE {m['deadline'] or 'yes'}" if m["time_limit"] else ""))
+            + (f";  DEADLINE {m['deadline'] or 'yes'}" if m["time_limit"] else "")
+            + (f";  !! {cells}" if cells else ""))
 
 
 # --------------------------------------------------------------------------------------------------- Generator
@@ -251,8 +261,11 @@ class Generator:
 
 # ------------------------------------------------------------------------------------------------- Spec
 class Spec:
-    def __init__(self, length=None, primary=None, secondary=None, secondary_missions=None, no_time_limit=False):
+    def __init__(self, length=None, primary=None, secondary=None, secondary_missions=None, no_time_limit=False,
+                 sa14_primary=None, sa14_secondary=None):
+        """sa14_primary / sa14_secondary: True = that target must sit in an SA-14 cell, False = must not, None = either."""
         self.length, self.no_time_limit = length, no_time_limit
+        self.sa14 = {"primary": sa14_primary, "secondary": sa14_secondary}
         self.primary = TASKS[primary] if primary else None
         self.secondary = TASKS[secondary] if secondary else None
         self.secondary_missions = set(secondary_missions or [])
@@ -267,15 +280,35 @@ class Spec:
                 and (not self.primary or m["primary"]["type"] in self.primary)
                 and (not self.secondary or m["secondary"]["type"] in self.secondary)
                 and (not self.secondary_missions or m["secondary"]["mission"] in self.secondary_missions)
-                and not (self.no_time_limit and m["time_limit"]))
+                and not (self.no_time_limit and m["time_limit"])
+                and all(want is None or bool(m[role]["sa14"]) == want for role, want in self.sa14.items()))
 
     def __str__(self):
         parts = [f"length {self.length}" if self.length else "",
                  f"primary {'/'.join(k for k, v in TASKS.items() if v == self.primary)}" if self.primary else "",
                  f"secondary {'/'.join(k for k, v in TASKS.items() if v == self.secondary)}" if self.secondary else "",
                  f"secondary mission in {sorted(self.secondary_missions)}" if self.secondary_missions else "",
-                 "no time limit" if self.no_time_limit else ""]
+                 "no time limit" if self.no_time_limit else "",
+                 *(f"{role} {'in' if want else 'not in'} an SA-14 cell" for role, want in self.sa14.items() if want is not None)]
         return ", ".join(p for p in parts if p) or "any mission"
+
+
+class SameTaskSpec(Spec):
+    """The mission loop's filter (2026-10-30): both targets the same photo / destroy task (one camera or Maverick bay
+    covers both; rules.loadout), plus Spec's length / time limit / SA-14 filters. `kinds` limits which of "photo" and
+    "destroy" are accepted. A mixed pair, supply drop, landing or intercept never matches."""
+    def __init__(self, kinds=("photo", "destroy"), **kw):
+        super().__init__(**kw)
+        bad = set(kinds) - {"photo", "destroy"}
+        if bad or not kinds: raise ValueError(f"kinds: photo and/or destroy, got {sorted(kinds)}")
+        self.kinds = tuple(kinds)
+
+    def match(self, m):
+        same = any(m["primary"]["type"] in TASKS[k] and m["secondary"]["type"] in TASKS[k] for k in self.kinds)
+        return same and super().match(m)
+
+    def __str__(self):
+        return f"both targets {'/'.join(self.kinds)}" + (", " + super().__str__() if super().__str__() != "any mission" else "")
 
 
 def survey(gen, spec, n, **assignment):
@@ -304,7 +337,8 @@ def predict(gen, spec, limit):
 def find_seed(spec, gen, tries=2000, rng_seed=1, seeds=None, **assignment):
     """Search seeds offline for one whose next mission matches `spec`: (seed, predicted mission), or None after `tries`
     seeds. seeds: an iterable to try instead of random ones. The generator's image is restored after."""
-    it = seeds if seeds is not None else (random.Random(rng_seed).getrandbits(32) for _ in range(tries))
+    rng = random.Random(rng_seed)    # one stream: a Random built inside the generator repeated the same seed every time
+    it = seeds if seeds is not None else (rng.getrandbits(32) for _ in range(tries))
     try:
         for n, seed in enumerate(it):
             if n >= tries: break
@@ -365,8 +399,33 @@ def select_by_seed(emu, reader, seed, prediction, *, ds_phys=None, keys=SELECT_N
     log(f"seed {seed:#010x} written to ds:7A50")
     emu.tap(keys[0], hold); time.sleep(settle)
     if flag() != 1: raise RuntimeError("Select New Mission did not register (ds:CA6A still 0): was it highlighted?")
+    return _await_deal(emu, reader, ds_phys, flag, prediction, keys[1:], hold, settle, timeout, log)
+
+
+# After a flight the debrief ends on the duty roster with ds:CA6A already 1 (the state select_by_seed reaches after its
+# first Enter; seen live 2026-10-30). From there only the pilot and "Accept assignment" Enters are left.
+ROSTER_KEYS = ["enter", "enter"]
+
+
+def select_from_roster(emu, reader, seed, prediction, *, ds_phys=None, keys=ROSTER_KEYS, hold=0.1, settle=0.8,
+                       timeout=60.0, log=print):
+    """LIVE (sends keys and writes memory; only when the user asked for it), with the game on START's duty roster
+    (ds:CA6A = 1, a new mission pending): POKE the seed, Enter on the pilot, Enter on "Accept assignment", wait for
+    ds:CA6A -> 0, compare the briefing block. Returns (ok, Mission). NEVER Esc on the roster: it erases the pilot.
+    UNTESTED live: that a seed poked here (not at the options menu) is the one the generator uses; ok is False if not."""
+    if ds_phys is None:
+        ds_phys = reader.start_ds()
+        if ds_phys is None: raise RuntimeError("START is not running")
+    flag = lambda: emu.peek(ds_phys + NEW_FLAG, 1)[0]
+    if flag() != 1: raise RuntimeError("ds:CA6A is 0: the game is not on the roster with a new mission pending")
+    emu.poke(ds_phys + SEED, struct.pack("<I", seed))
+    log(f"seed {seed:#010x} written to ds:7A50")
+    return _await_deal(emu, reader, ds_phys, flag, prediction, keys, hold, settle, timeout, log)
+
+
+def _await_deal(emu, reader, ds_phys, flag, prediction, keys, hold, settle, timeout, log):
     end = time.time() + timeout
-    for k in keys[1:]:
+    for k in keys:
         emu.tap(k, hold); time.sleep(settle)
     while flag() != 0:
         if time.time() > end: raise RuntimeError(f"no new mission after {timeout:.0f} s (ds:CA6A stays 1)")

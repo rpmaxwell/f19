@@ -1,4 +1,4 @@
-"""pytest plugin (loaded with -p by test_pilot_controls.py in a subprocess): replaces pilot_equiv.FakeControls by
+"""pytest plugin (loaded with -p by test_pilot_controls.py in a subprocess): replaces pilot_worlds.FakeControls by
 DualControls, which runs the real f19.pilot.controls.Controls (on a recording KeyLog emulator) next to FakeControls on
 every apply() of every WP-7b equivalence scenario and replay, and records each tick where the key events or the
 speed target differ. The summary goes to the JSON file named by F19_DUAL_OUT: {test nodeid: [ticks, mismatches,
@@ -6,7 +6,7 @@ first mismatch]}."""
 import json
 import os
 
-import pilot_equiv as PE
+import pilot_worlds as PE
 
 from f19.pilot.controls import Controls
 

@@ -57,7 +57,7 @@ class Systems:
     flags: int = 0                       # ds:684C, bits above
     throttle: int | None = None          # percent
     station: int | None = None           # selected weapon station 0-3
-    loadout: tuple = ()                  # 4 x (weapon index, count), weapon indices as analysis/ordnance.py
+    loadout: tuple = ()                  # 4 x (weapon index, count), weapon indices as `python -m f19.rules.weapons`
     fuel_lb: int | None = None           # ds:4ED0
     gun_rounds: int | None = None
     flares: int | None = None            # ds:4ED4 stores
@@ -76,6 +76,17 @@ class Systems:
     brakes = property(lambda s: bool(s.flags & BRAKES))
     ecm = property(lambda s: bool(s.flags & ECM))
     ir_jammer = property(lambda s: bool(s.flags & IRJ))
+
+
+@dc
+class TrackcamView:
+    """What the B / "/" target pick depends on (reader.read_trackcam_view; rules.trackcam)."""
+    screen: int = 0                      # ds:9740 (0x13 / 0x19 = trackcam screens)
+    view: int = 0                        # ds:9E8C view offset (u16, 0x4000 = 90 deg)
+    night: int = 0                       # ds:4EF4
+    flags: int = 0                       # ds:94E0 (bit 0x80 blocks B)
+    cooldown: int = 0                    # ds:8B22
+    records: tuple = ()                  # (index, x, y, flags) of every record the search walks (ds:80AA, ds:9500 of them)
 
 
 class ThreatKind(Enum):
@@ -140,6 +151,7 @@ class GameState:
     events: tuple | None = None          # flight-event records (type, flags, target, time) (read_events)
     projectiles: tuple = ()              # player projectile slots 8-11 in order: (spec u16 +0x10, ttl u16 +0x0E) (read_projectiles)
     target_records: tuple = ()           # (record, x, y, destroyed) target-table records the reader was asked for (read_target)
+    cam: TrackcamView | None = None      # trackcam selection inputs (Reads.enrich(cam=True)); None = not read
     frame_scale: int | None = None       # ds:4EFC frames per 2 s tick (read_gun fs)
     gun_slots: int | None = None         # bullet slots in use (read_gun nslots); rounds = systems.gun_rounds
     missile_world: Any = field(default=None, compare=False, repr=False)   # missile_game.parse() dict (MissileWatch's snap)
@@ -365,6 +377,7 @@ class RoutePoint:
     alt_ft: int | None = None
     probe: str | None = None
     loiter: str | None = None
+    acq: dict | None = None              # run-in point: trackcam acquisition window (far_km, near_km, len_km, presses, ok)
 
     @property
     def xy(self): return self.x, self.y
@@ -409,7 +422,9 @@ class Route:
     summary: dict = field(default_factory=dict, compare=False, repr=False)
 
     @property
-    def legs(self): return tuple(Leg(i, self.points[i - 1], self.points[i]) for i in range(1, len(self.points)))
+    def legs(self):
+        # Keeps zero-length legs (the planner's own output). The flyer (pilot/phases/fly_leg.py) merges them, as nav did: decided 2026-10-29, one rule per consumer.
+        return tuple(Leg(i, self.points[i - 1], self.points[i]) for i in range(1, len(self.points)))
 
     def with_version(self, v): return dataclasses.replace(self, version=v)
 

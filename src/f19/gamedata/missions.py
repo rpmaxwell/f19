@@ -4,13 +4,13 @@ Sources (all static game data, no emulator needed except for the table dump):
   - BRIEFING.TXT: MicroProse LZW (byte 0 = max code width 11, codes LSB-first from 9 bits,
     first free code 257, dictionary reset when full), 56 NUL-separated texts; text n = mission n.
   - logs/theater/missions.json: START's mission table (ds:4B0C), dumped by
-    `scripts/read_mission.py --missions logs/theater/missions.json` during a briefing.
+    `python -m f19.cli.read_mission --missions logs/theater/missions.json` during a briefing.
   - each .WLD: 100-byte category table (one byte per name slot) just before the 256-byte territory
     grid, which sits just before the name list (CE.WLD 0x756). START copies it to ds:C162.
 A mission can occur in theater t when bit t of its theater_mask is set (0 Libya, 1 Persian Gulf,
 2 North Cape, 3 Central Europe) and the theater has a target object of the mission's category.
 
-  python3 analysis/mission_catalog.py [out.md]      (or python -m f19.gamedata.missions; default docs/game/missions.md)
+  python -m f19.gamedata.missions [out.md]      (default docs/game/missions.md)
 """
 import json
 import sys
@@ -89,7 +89,7 @@ def main(out):
         task = TASK.get(m["type"], m["type_name"])
         rows.append(f"| {n} | {task} | {target} | {first} | {theaters} | {levels} | {time_limit(m)} | {primary_only(m)} | {setup(m)} |")
     md = ["# F-19 missions", "",
-          "> **Generated file** (`python3 analysis/mission_catalog.py`, code in `src/f19/gamedata/missions.py`). Do not",
+          "> **Generated file** (`python3 -m f19.gamedata.missions`, code in `src/f19/gamedata/missions.py`). Do not",
           "> hand-edit the catalog: regenerate it.", "",
           "Generated from the game files: BRIEFING.TXT for the texts, START's mission",
           "table (`logs/theater/missions.json`) and each theater's .WLD category table. Layout notes are in",

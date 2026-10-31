@@ -5,7 +5,12 @@ keystroke bring-up, screenshot/OCR loggers, superseded planners, Ghidra drivers,
 
 This tree is **not** part of the `f19` package or its tests, and **it may break**. Many scripts
 here still import product modules by their old flat names (`dosbox_automation`, `f19_state`, ...)
-from their own directory, so they need a `sys.path` fix before they run again.
+from their own directory, so they need a `sys.path` fix before they run again. Those flat modules (`dosbox_automation`,
+`f19_state`, `read_mission`, `radar_game`, `missile_game`, `territory`, ...) were deleted on 2026-10-30 (see git history and
+`docs/design/refactor_plan.md`, "Cutover steps 4 and 5"); the package replaces them (`f19.emulator.Emulator`, `f19.memory.reader`, ...). The scripts that imported them were ported the same day
+(2026-10-30: `research/scripts/{acquire_target,alt_hold*,probe_*,trial_*,watch_load,wp_record,...}.py`, `analysis/smooth_route.py`); they compile and
+every name they import resolves, but none was run against a live game. Older breakage stays (hard-coded `logs/...` paths from before the data moved
+to `F19_DATA`, scratch paths in one-off scripts such as `radar_rings_join.py`).
 
 - `scripts/`  live probes and trials (moved from `scripts/`, 2026-10-24)
 - `analysis/` offline analysis and RE (moved from `analysis/`). `egame_re/` and `end_re/` hold

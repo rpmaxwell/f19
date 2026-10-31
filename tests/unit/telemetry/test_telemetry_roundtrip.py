@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-for _p in (ROOT / "tests", ROOT / "src", ROOT / "analysis", ROOT / "scripts"):
+for _p in (ROOT / "tests", ROOT / "tests" / "replay", ROOT / "src"):
     if str(_p) not in sys.path: sys.path.insert(0, str(_p))
 import product  # noqa: E402
 
@@ -111,7 +111,7 @@ def with_data(monkeypatch, module, data):
 
 @pytest.mark.parametrize("src", ["written", "stored"])
 def test_memlog_load_reads_output(src, request, monkeypatch):
-    import memlog_load
+    from f19.telemetry import memlog_load
     data = request.getfixturevalue(src)
     for run in RUNS:
         with_data(monkeypatch, memlog_load, FIX)
@@ -123,41 +123,44 @@ def test_memlog_load_reads_output(src, request, monkeypatch):
 
 @pytest.mark.parametrize("src", ["written", "stored"])
 def test_missile_game_load_run_reads_output(src, request, monkeypatch, egame):
-    mg = product.missile_game()
+    from f19.cli import memlog_checks as mg
     data = request.getfixturevalue(src)
     for run in RUNS:
-        with_data(monkeypatch, mg, FIX); a = mg.load_run(run)
-        with_data(monkeypatch, mg, data); b = mg.load_run(run)
+        a = mg.load_run(run, logs=FIX / "logs")
+        b = mg.load_run(run, logs=data / "logs")
         assert len(a) == len(b) and [s["t"] for s in a] == [s["t"] for s in b]
         assert repr(a) == repr(b)
 
 
 @pytest.mark.parametrize("src", ["written", "stored"])
 def test_missile_replay_nav_want_reads_output(src, request, monkeypatch, egame):
-    import missile_replay
+    from f19.cli import memlog_checks as missile_replay
     data = request.getfixturevalue(src)
     for run in RUNS:
         times = MemlogSource(FIX / "logs" / "memlog" / run).times()
-        with_data(monkeypatch, missile_replay, FIX); wa = missile_replay.nav_want(run)
-        with_data(monkeypatch, missile_replay, data); wb = missile_replay.nav_want(run)
+        wa = missile_replay.nav_want(run, logs=FIX / "logs")
+        wb = missile_replay.nav_want(run, logs=data / "logs")
         assert [wa(t) for t in times] == [wb(t) for t in times]
 
 
-def test_nav_tui_snapdb_reads_output(stored, egame):
+def test_snapdb_reads_stored_output(stored, egame):
+    """The reader on a stored memlog run reads what it reads on the original (harness.SnapDB: PEEKs answered from a snapshot)."""
     import json
-    import nav_tui
-    fs = product.f19_state()
+    import harness as H
+    from f19.memory import MemoryReader
     for run in RUNS:
         states = []
         for d in (FIX / "logs" / "memlog" / run, stored / "logs" / "memlog" / run):
-            windows = [tuple(w) for w in json.load(open(d / "windows.json"))["windows"]]   # as nav_tui.replay
-            db, out = nav_tui.SnapDB(windows), []
+            windows = [tuple(w) for w in json.load(open(d / "windows.json"))["windows"]]
+            db, out = H.SnapDB(windows), []
+            reader = MemoryReader(db)
             for f in sorted(d.glob("snap_*.bin"), key=lambda f: float(f.stem[5:]))[:60]:
-                db.load(f.read_bytes()); fs._offset.clear()
-                try: out.append((f.name, fs.read_state(db, tries=1), fs.read_waypoints(db)))
-                except RuntimeError: out.append((f.name, None, None))
+                db.load(f.read_bytes())
+                try: gs = reader.snapshot(); out.append((f.name, gs.pos, gs.att, gs.speed_kt, gs.waypoints))
+                except RuntimeError: out.append((f.name, None, None, None, None))
             states.append(out)
-        assert states[0] == states[1] and any(s for _, s, _ in states[0])
+        assert states[0] == states[1] and any(s for _, s, *_ in states[0])
+
 
 
 @pytest.mark.parametrize("run", RUNS)

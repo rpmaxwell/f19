@@ -1,34 +1,37 @@
 # Tests
 
-The safety net for the refactor (docs/design/refactor_plan.md, WP-1): it pins what the code did BEFORE the
-refactor, so each later wave can show it changed nothing.
+The safety net. It started as the refactor's (docs/design/refactor_plan.md, WP-1): pin what the code did before, so each wave could
+show it changed nothing, with the old code kept as an oracle. **That oracle is retired (2026-10-30)**: the old `scripts/phases.py`,
+`missile_watch.py`, `nav_tui.py`, `f19_state.py`, `read_mission.py`, `analysis/radar_game.py` ... are gone, and what they were compared with
+is now stored in the tests as digests and literals (recorded from the old code on that day; each is named in its test's docstring) or as
+characterisation digests of the new code (loops, arbiter, fly-leg: `GOLD` in the file, refresh with `PRINT_DIGESTS=1 pytest -s`, and say why
+in the commit).
 
 ## Running
 
 ```
 uv run pytest                 # fast suite, ~22 s
 uv run pytest --run-slow      # + golden planner runs and whole-corpus checks, ~13.5 min
-uv run pytest tests/replay --update-baseline   # rewrite tests/replay/baseline.json (review the diff!)
 ```
 
 Tests whose data is missing (no `~/f19-data`, no fixtures, no `EGAME.bin`) are skipped, not failed.
 
 | File | What | Speed |
 |---|---|---|
-| `test_planner_checks.py` | every check of `analysis/planner/checks.py` as its own case; also pins each check's printed numbers | fast |
-| `test_rules_checks.py` | `radar_game.py check` and `missile_game.py check` (R1 gate + outcomes) on the replay fixtures; on the whole memlog corpus with `--run-slow` | fast / slow |
+| `test_planner_checks.py` | every check of `f19.planner.checks` as its own case; also pins each check's printed numbers | fast |
+| `test_rules_checks.py` | `python -m f19.cli.memlog_checks radar` and `missiles` (R1 gate + outcomes) on the replay fixtures; on the whole memlog corpus with `--run-slow` | fast / slow |
 | `test_planner_golden.py` | re-plans frozen plan dirs, compares `route.json` field by field, `report.txt` (minus its header line), `terrain.npz`; the known `pg_shiraz` PlanError | slow (+1 fast) |
-| `replay/test_replay_reactions.py` | replay harness: reactions and phases on recorded flights vs the nav log; frozen baseline | fast |
+| `unit/pilot/test_pilot_*.py` | phases and reactions on synthetic closed-loop worlds (outcomes asserted); loops, arbiter and fly-leg as characterisation digests over the replay fixtures and synthetic worlds; Controls vs the FakeControls contract on 30k key applies | fast |
 | `unit/pilot/test_fly_live.py` | `f19 fly` live start-up on a fake emulator: check_route, N/S switch, signals release keys, `--plain`, `--no-keys`, eject path | fast |
 | `unit/rules/test_radar_systems.py` | the single radar-system table vs the three copies it replaced | fast |
 | `test_import_rules.py` | layer rules for `src/f19` (plan section 3), parsed from the source | fast |
 | `test_settings.py` | `f19.core.settings` | fast |
 
-Reference copies: `scripts/nav.py` is now a shim; the old nav that the equivalence tests extract code from is
-`research/scripts/nav_legacy.py` (frozen; do not edit or run).
+`scripts/nav.py` is a one-line shim for `f19.cli.fly`. Test helpers: `unit/pilot/pilot_worlds.py` (synthetic worlds, `FakeControls`,
+`run_new` / `run_react`), `replay/harness.py` (the recorded flights: `Run`, `SnapDB`, `theater_grid`, a copy of nav's terrain probe and
+`build_attacks`).
 
-`product.py` is the only place tests import product code from. When a wave moves a module (say `phases.py` into
-`f19.pilot`), change the import there; the tests and baselines must then pass unchanged.
+`product.py` holds the settings and the import path for the tests.
 
 ## Fixtures (outside the repo, under `F19_DATA/fixtures`)
 
@@ -66,7 +69,7 @@ runs the whole plan. Both assert the error: when the bug is fixed (plan section 
 | 1792546698 | 1792546685 | ce_test_1019_2337 | photo + Maverick attacks, 10 SA-14 launches, flare | 313 of 2657 (2 windows) |
 | 1792715432 | 1792715419 | ce_stupsk_1022_2025 | takeoff, fighter evasion (MiG-31, IL-76), AA-9 / SA-10 missiles, Elite | all 787 |
 
-Nav log = nearest epoch, as `memlog_load.py` / `missile_replay.py` pick it; route = the plan dir whose route matches
+Nav log = nearest epoch, as `f19.telemetry.memlog_load` / `missile_replay.py` pick it; route = the plan dir whose route matches
 the flown track and was written just before the flight.
 
 ## The replay harness (`replay/harness.py`)
@@ -74,30 +77,11 @@ the flown track and was written just before the flight.
 A fake connection (`SnapDB`, as `nav_tui.SnapDB`, plus key recording) answers the `f19_state` readers from a memlog
 snapshot; phases get a replay clock in place of `time` (their toggle settle timer). What is compared:
 
-| Replay | Inputs | Compared with | Tolerance |
-|---|---|---|---|
-| `terrain_escape` | every nav CSV row (all inputs are logged) + nav's `terrain_ahead` (copied: nav can't be imported) | `escape` column per row, `want` while both active, the events | heading 1 deg |
-| `terrain_escape_margin150` | same, with `MARGIN_FT` 150 as flown on 2026-10-21 | same | same |
-| `fighter_watch` | every snapshot: aircraft + player state from memory | nearest nav row's `fighter`, `want` | heading 15 deg (fan step) |
-| `takeoff` | snapshots from the runway | "takeoff done" event time | 5 s |
-| `attack_primary/secondary` | snapshots from "attack start" | nearest row's `attack_state`; attack log vs events | - |
-| `missile_watch` | snapshots (act mode), the row's `want` as plan | nothing logged (see below): self-baseline | - |
-
-Every replay's metrics are frozen in `replay/baseline.json` and must match exactly; `FLOORS` in the test add loose
-"still looks like the flight" bounds. Baseline numbers (current code):
-
-- TerrainEscape, 1792609731: state agrees on 16075/16216 rows (99.1 %), but only 39 of 180 logged escape rows are
-  replayed, 4 of 11 events. The flight ran with `MARGIN_FT` 150; the code has 100 since (its own comment says why).
-  With 150 the replay gives 16180/16216 (99.8 %), 161/180 rows, 8/11 events: the harness reproduces the flight
-  when the parameters match.
-- FighterWatch, 1792715432: 760/761 snapshots agree on the state, 229/229 evading snapshots both evade, heading
-  within 15 deg on 190/229 (83 %).
-- Takeoff: done 0.09 s before nav's event (1792609731), 3.65 s after (1792715432).
-- Attack: primary Maverick 63/67 snapshots (94 %), photo 42/44 (95 %), log lines equal nav's. The secondary
-  Maverick of 1792546698 sticks in `fire` (37/50, 74 %): the real shot fell between two snapshots, so the replay
-  entered `fire` with the Maverick already gone and never sees the count drop. An open-loop artefact, kept as is.
-- MissileWatch: 1792546698 10 SA-14s, all doomed (state `watch` only), 10/10 first predictions right;
-  1792715432 5 missiles, 5/5, states watch / evade / survival. The decisions per snapshot are in the baseline.
+The recorded flights (`fixtures/replay`) feed the tests above: `test_pilot_arbiter.py` runs the whole new stack (takeoff, Maverick and photo
+attacks, terrain escapes, FighterWatch evasion, MissileWatch on SA-14 / AA-9 launches) over all three and digests every tick;
+`test_pilot_reactions.py` runs TerrainEscape, FighterWatch and MissileWatch alone (states asserted); `test_pilot_fly_leg.py` checks FlyLeg
+against the logged leg and `want`. Until 2026-10-30 a frozen baseline also recorded the OLD code's agreement with the nav log
+(TerrainEscape 99.1 %, FighterWatch 760/761 states, Attack 94-95 %, MissileWatch 15/15 first predictions); that went with the old code.
 
 What is NOT comparable: the logged `want` is after every override, nav's route want before a reaction isn't
 logged (the harness uses the want of the last row with no reaction active, stale during long evasions); snapshots
@@ -107,5 +91,5 @@ replayed (no fixture has a full landing in its windows; no strafe flight has a m
 
 ## Whole-corpus numbers (slow)
 
-`radar_game.py check` on the 34 memlog runs up to 1792724414: EMV 59625/59649, pink 2313/2433, duty 1145395/1169997.
-`missile_game.py check`: R1 gate 629/631, outcomes 64/64. Later runs are left out so the numbers stay fixed.
+`python -m f19.cli.memlog_checks radar` on the 34 memlog runs up to 1792724414: EMV 59625/59649, pink 2313/2433, duty 1145395/1169997.
+`memlog_checks missiles`: R1 gate 629/631, outcomes 64/64. Later runs are left out so the numbers stay fixed.

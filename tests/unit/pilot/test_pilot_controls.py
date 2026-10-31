@@ -1,7 +1,7 @@
 """WP-7a Controls: the real key sender against the WP-7b contract.
 
 test_controls_match_fake_on_every_wp7b_scenario re-runs every WP-7b equivalence test (synthetic scenarios and the
-replay fixtures) in a subprocess with pilot_equiv.FakeControls replaced by a dual adapter (controls_dual_plugin.py):
+replay fixtures) in a subprocess with pilot_worlds.FakeControls replaced by a dual adapter (controls_dual_plugin.py):
 on every apply() the real Controls, on a recording emulator, must emit the identical key event stream (tap / scan /
 down / up with hold times) and leave the same speed target. The harness-sensitivity test that mutates FakeControls'
 debounce must show mismatches (proof that the dual check sees a difference). The rest: unit tests of the parts the
@@ -14,15 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from pilot_equiv import KeyLog, gamestate, world
+from pilot_worlds import KeyLog, gamestate, world
 from f19.core.clock import ManualClock
 from f19.core.types import Action, Command, FlightContext, Toggle
 from f19.pilot.controls import EQUALS, NOSE_DOWN, NOSE_UP, Controls
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-WP7B = ["test_pilot_phases.py", "test_pilot_reactions.py", "test_pilot_replay_phases.py", "test_pilot_types.py",
-        "test_pilot_fly_leg.py"]
+WP7B = ["test_pilot_phases.py", "test_pilot_reactions.py", "test_pilot_types.py", "test_pilot_fly_leg.py"]
 SENSITIVITY_TEST = "test_pilot_types.py::test_harness_catches_a_change"
 
 
@@ -82,7 +81,8 @@ def test_toggle_debounce_shared_and_throttle_clears_speed(egame):
     c.apply(Command(speed_kt=165.0), st, ctx); assert c.speed.target == 165.0
     c.apply(Command(actions=(Action.EJECT,)), st, ctx)
     assert emu.take() == [("scan", 0x44, True, 0.2)]                           # Shift+F10, the shifted-scancode path
-    with pytest.raises(ValueError): c.apply(Command(actions=(Action.DESIGNATE,)), st, ctx)
+    c.apply(Command(actions=(Action.DESIGNATE,)), st, ctx)                    # no key: dropped, counted, nothing sent
+    assert emu.take() == [] and c.unsupported == {Action.DESIGNATE: 1}
 
 
 def test_scheduled_hold_and_release_all(egame):

@@ -15,7 +15,7 @@ A tile id at LOD L indexes .3DT list [L][id]: objects (x, y, z, shape) as offset
 tile centre in that LOD's units (4096 per tile). World pos = ((tile<<12) + 0x800 + x) << SHIFT[L].
 Shapes (.3D3) are vertex lists in the same LOD-local units, z = height.
 
-  python -m f19.gamedata.terrain [NC|CE|LB|PG]   (or analysis/terrain_3d.py)
+  python -m f19.gamedata.terrain [NC|CE|LB|PG]   (or `python -m f19.gamedata.terrain`)
       -> logs/theater/<TH>_terrain.npz, <TH>_mountains.json, <TH>_terrain.png
 """
 import json
@@ -286,7 +286,7 @@ def write_outputs(th):
             continue
         mts.append(dict(x=round(cx), y=round(cy), peak_ft=peak, radius_km=round(r, 2), lod=lod, shape=shape))
     mts.sort(key=lambda m: -m["peak_ft"])
-    json.dump({"note": "Solid 3D terrain decoded from .3DG/.3DT/.3D3 (analysis/terrain_3d.py). "
+    json.dump({"note": "Solid 3D terrain decoded from .3DG/.3DT/.3D3 (`python -m f19.gamedata.terrain`). "
                        "x/y waypoint units (64/km, y grows south); peak_ft above the flat world "
                        "(same units as the altimeter); radius_km = half-width of the footprint. "
                        f"Full top-of-terrain grid: {th}_terrain.npz (height_ft[j, i] at waypoint (i, j) * step_wp).",

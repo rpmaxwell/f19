@@ -1,4 +1,4 @@
-"""The old analysis/planner entry points and module names still work and are the package's objects."""
+"""The planner's entry points (python -m f19.planner, f19.planner.new_plan, f19.planner.checks) and the mission dict."""
 import json
 import subprocess
 import sys
@@ -8,38 +8,14 @@ import pytest
 import product
 
 ROOT = product.ROOT
-PLANNER_DIR = str(ROOT / "analysis" / "planner")
 
 
-@pytest.fixture(scope="module")
-def old():
-    if PLANNER_DIR not in sys.path: sys.path.insert(0, PLANNER_DIR)
-    import alertsim, fuelplan, loiter, plan, probes, profiles, radar, route, world   # noqa: E401
-    return dict(alertsim=alertsim, fuelplan=fuelplan, loiter=loiter, plan=plan, probes=probes, profiles=profiles,
-                radar=radar, route=route, world=world)
-
-
-def test_old_names_are_the_package_objects(old):
-    import f19.planner as P
-    from f19.planner import cli, fuelplan, planner, profiles, radar, report, router, world
-    from f19.core import units
-    assert old["route"].Router is router.Router and old["route"].PlanError is P.PlanError is router.PlanError
-    assert old["route"]._search is router._search                       # private names re-exported too
-    assert old["fuelplan"].integrate is fuelplan.integrate and old["profiles"].load is profiles.load
-    assert old["radar"].RadarModel is radar.RadarModel and old["radar"].MODEL is radar.MODEL
-    assert old["world"].World is world.World and old["world"].KT_KMH == units.GROUND_KMH_PER_KT == world.GROUND_KMH_PER_KT
-    assert old["world"].K == 64.0 and isinstance(old["world"].K, float)
-    plan = old["plan"]
-    assert issubclass(plan.Planner, planner.Planner) and plan.summarise is report.summarise and plan.main is cli.main
-    assert plan.emit is cli.emit and sys.modules["route"] is old["route"]
-    assert old["fuelplan"].TANK_LB == fuelplan.TANK_LB == 1900.0
-
-
-def test_takeoff_heading_unchanged(old):
-    for th, idx in old["plan"].THEATER_INDEX.items():
+def test_takeoff_heading_unchanged():
+    from f19.planner.planner import THEATER_INDEX, game_takeoff_heading
+    for th, idx in THEATER_INDEX.items():
         for carrier in (False, True):
             want = (0.0 if idx & 1 else 180.0) + (0x400 * 360 / 65536 if carrier else 0.0)      # the pre-move formula
-            assert old["plan"].game_takeoff_heading(th, carrier) == want
+            assert game_takeoff_heading(th, carrier) == want
 
 
 def test_mission_dict_from_core_mission(egame):
@@ -56,8 +32,7 @@ def test_mission_dict_from_core_mission(egame):
     assert mission_dict(d) is d
 
 
-@pytest.mark.parametrize("args", [["analysis/planner", "--help"], ["analysis/planner/new_plan.py", "--help"],
-                                  ["analysis/planner/plan.py", "--help"]])
+@pytest.mark.parametrize("args", [["-m", "f19.planner", "--help"], ["-m", "f19.planner.new_plan", "--help"]])
 def test_entry_points_run(args):
     p = subprocess.run([sys.executable, *args], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode == 0, p.stderr[-2000:]
@@ -65,5 +40,29 @@ def test_entry_points_run(args):
 
 
 def test_checks_script(egame):
-    p = subprocess.run([sys.executable, "analysis/planner/checks.py"], cwd=ROOT, capture_output=True, text=True)
+    p = subprocess.run([sys.executable, "-m", "f19.planner.checks"], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode == 0 and "all checks passed" in p.stdout, p.stdout[-2000:] + p.stderr[-2000:]
+
+
+def test_read_mission_command_reads_a_saved_image(tmp_path, egame):
+    """python -m f19.cli.read_mission (the command new_plan runs; was scripts/read_mission.py) on a saved START image."""
+    img = product.settings().logs / "tmp" / "briefing_mem.bin"
+    if not img.exists(): pytest.skip("no START briefing image in F19_DATA/logs/tmp")
+    out = tmp_path / "m.json"
+    p = subprocess.run([sys.executable, "-m", "f19.cli.read_mission", "--snapshot", str(img), "--out", str(out)], cwd=ROOT, capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr[-2000:]
+    m = json.loads(out.read_text())
+    assert m["theater"] == "CE" and [t["role"] for t in m["targets"]][:2] == ["primary", "secondary"] and m["radars"] and m["takeoff"]["place"]
+
+
+@pytest.mark.slow
+def test_new_plan_end_to_end_from_a_mission_file(tmp_path, egame):
+    """new_plan --mission-file (no game): writes plan.json, runs the planner as a subprocess, writes route.json with the acquisition windows."""
+    from conftest import FIXTURES, need
+    d = need(FIXTURES / "plans" / "ce_kolobrzeg_1022_2250", "the kolobrzeg golden plan")
+    out = tmp_path / "plan"
+    p = subprocess.run([sys.executable, "-m", "f19.planner.new_plan", "--mission-file", str(d / "mission_mem.json"), "--extra-fuel", "2", "--out", str(out)],
+                       cwd=ROOT, capture_output=True, text=True)
+    assert p.returncode == 0, p.stdout[-1500:] + p.stderr[-1500:]
+    route = json.loads((out / "route.json").read_text())
+    assert any(pt.get("acq") for pt in route["points"]) and "fly it:" in p.stdout and "-m f19.cli.fly" in p.stdout

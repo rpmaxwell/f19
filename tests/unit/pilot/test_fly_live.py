@@ -11,7 +11,7 @@ import signal
 
 import pytest
 
-from pilot_equiv import product  # noqa: F401  (puts tests/replay on sys.path)
+from pilot_worlds import product  # noqa: F401  (puts tests/replay on sys.path)
 import harness as H  # noqa: E402
 from f19.cli import fly
 from f19.core.clock import ManualClock

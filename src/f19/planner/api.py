@@ -1,6 +1,6 @@
 """The planner's entry points, all in memory (no files: cli.py reads plan dirs and writes route.json / report / png).
 
-  plan_mission(spec, mission) -> PlanResult       the whole pre-flight plan: what `python analysis/planner <dir>` does
+  plan_mission(spec, mission) -> PlanResult       the whole pre-flight plan: what `python -m f19.planner <dir>` does
                                                   (every option: target order, approach side, attack bearings, loiters,
                                                   probes; the fuel-limited re-plan), 3-8 min
   context(spec, mission) -> Planner               built once per flight (World, radar model, Router: ~10-20 s)

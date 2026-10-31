@@ -24,6 +24,7 @@ import sys
 import time
 from pathlib import Path
 
+from f19.cli.gameworld import GameWorld
 from f19.core.clock import ManualClock, WallClock
 from f19.core.geometry import bearing_deg, dist, wrap_deg
 from f19.core.settings import settings as S
@@ -61,18 +62,6 @@ class RecordingEmulator:
 
 
 # ------------------------------------------------------------------------------------------------------ helpers
-class _World:
-    """f19.memory.mission.World over the game's .WLD files (read_mission.World)."""
-    def __init__(self):
-        from f19.rules.radar import radar_systems
-        self.R = radar_systems()
-    def wld_bytes(self, th):
-        try: return wld.wld_bytes(th)
-        except OSError: return None
-    def names(self, th): return wld.places(th)["names"]
-    def radar(self, kind): return self.R.get(kind)
-
-
 def _json(p):
     try: return json.loads(Path(p).read_text())
     except (OSError, ValueError): return None
@@ -158,7 +147,7 @@ def build(args, reader, emulator, clock, s0, *, sleep=time.sleep, wall=time.time
         ctx.route = provider.current()
     return Runner(reader, controls, arb, loops, bus, clock, provider, ctx=ctx, reads=reads, memlog=memlog,
                   sleep=sleep, side=side, terrain=probe, site_names=site_names, say=say, wall=wall,
-                  allow_eject=bool(getattr(args, "allow_eject", False)))
+                  allow_eject=bool(getattr(args, "allow_eject", True)))
 
 
 def director_for(args, route, rd, mm, dry):
@@ -285,7 +274,8 @@ def live(args, *, connect_fn=None, reader_factory=MemoryReader, say=None, sleep=
                 (logs / "nav" / "ALT").unlink(missing_ok=True)   # a stale altitude-schedule file from an earlier flight
                 runner = build(args, reader, keys, clock, s0, say=say, memlog=memlog, sinks=sinks, route=route, logs=logs,
                                sleep=sleep, wall=wall)
-                runner.run(signals=False)                     # stop_signals() is installed; run() releases in its finally
+                runner.exit_on_done = args.exit_on_done
+                result = runner.run(signals=False)                     # stop_signals() is installed; run() releases in its finally
             except BaseException:
                 if runner is None: probe.release_all()        # failed or interrupted before the runner existed
                 raise
@@ -298,6 +288,7 @@ def live(args, *, connect_fn=None, reader_factory=MemoryReader, say=None, sleep=
                 for sk in sinks:
                     try: sk.close()
                     except Exception: pass                    # noqa: BLE001
+            return result
 
 
 def hud_sink(args, route):  # pragma: no cover - live display
@@ -339,7 +330,7 @@ def check_route(args, reader, s0, world=None, say=print):
         planned = json.loads(mm.read_text())
         # memory can hold more than one mission copy, including a stale one with the same place names (2026-10-15):
         # accept the route if any copy matches it
-        copies = MM.parse_all(reader.memory(), planned.get("theater", "NC"), world=world or _World())
+        copies = MM.parse_all(reader.memory(), planned.get("theater", "NC"), world=world or GameWorld())
         live_ = next((c for c in copies if key(c) == key(planned)), copies[-1] if copies else {"targets": []})
         if key(live_) != key(planned):
             match = []
@@ -385,9 +376,12 @@ def parser():
     ap.add_argument("--strafe", help="gun attack on radar sites now: record numbers, comma-separated, or 'nearest'")
     ap.add_argument("--missile-watch", choices=("act", "observe", "off"), help="enemy-missile evasion (default act at Elite)")
     ap.add_argument("--director", action="store_true", help="replan with the FlightDirector after deviations (WP-7c; needs --route)")
-    ap.add_argument("--allow-eject", action="store_true",
-                    help="let the director eject (Shift+F10) when it decides to bail out; without it the eject is suppressed, "
-                         "logged, and the plane keeps flying (the key is untried live)")
+    ap.add_argument("--allow-eject", dest="allow_eject", action="store_true", default=True,
+                    help="(default, kept for old command lines) the director may eject (Shift+F10) when it decides to bail out; "
+                         "the plane is levelled first (pilot/eject.py)")
+    ap.add_argument("--no-eject", dest="allow_eject", action="store_false",
+                    help="suppress the eject: it is logged and the plane keeps flying (the director then plans no more)")
+    ap.add_argument("--exit-on-done", action="store_true", help="exit once landed and stopped (status 0); 10 after an eject, 11 if not in flight")
     ap.add_argument("--plain", action="store_true", help="no HUD")
     ap.add_argument("--no-keys", action="store_true", help="LIVE, READ-ONLY: read the game and run the whole pilot, but Controls "
                     "talks to a recorder - no key is sent; the would-be key stream is written to logs/nav/<id>.keys.txt")
@@ -411,15 +405,22 @@ def resolve(args):
     return args
 
 
+def exit_code(result):
+    """--exit-on-done status: 0 landed (or no exit text), 10 ejected, 11 not in flight (crashed or mission over)."""
+    if result and "ejected" in result: return 10
+    if result and "not in flight" in result: return 11
+    return 0
+
+
 def main(argv=None):
     args = resolve(parser().parse_args(argv))
     if args.replay or args.dry_run:
         if not (args.replay and args.dry_run): raise SystemExit("fly: --replay and --dry-run go together (offline mode)")
         dry_run(args); return 0
-    try: live(args)
+    try: result = live(args)
     except KeyboardInterrupt:
         print("fly: stopped (SIGINT / SIGTERM) - keys released", flush=True); return 130
-    return 0
+    return exit_code(result) if args.exit_on_done else 0
 
 
 if __name__ == "__main__":

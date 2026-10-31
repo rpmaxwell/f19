@@ -19,13 +19,14 @@ import struct
 import time
 from pathlib import Path
 
-from f19.core.types import GameState, Mission
+from f19.core.types import GameState, Mission, TrackcamView
 from f19.core.units import CLOCK_TICK_S
 from f19.memory import addresses as A
 from f19.memory import mission as M
 
 _offset = {}             # id(db) -> EGAME offset (old phys -> phys)
-_events = {}             # id(db) -> phys of the event list found by its first records (or None)
+_events = {}             # id(db) -> phys of the event list found by its first records, or (None, time of the failed scan)
+EVENT_RETRY_S = 5.0      # a failed scan is retried this often (the list only has its two marker records ~64 game s in)
 
 
 # ------------------------------------------------------------------------------------------------ transport
@@ -61,12 +62,17 @@ def find_offset(db, start=A.SCAN_LO, end=A.SCAN_HI):
 def find_events(db, lo=A.EVENT_SCAN_LO, hi=A.EVENT_SCAN_HI):
     """Phys address of the flight-event list (6-byte records [status, target, u16 time, cell x, cell y];
     END.EXE scores these): found by its start, the takeoff record 08 00 20 00 then a 64 s sample 09 00 40 00."""
-    if id(db) in _events: return _events[id(db)]
+    hit = _events.get(id(db))
+    if isinstance(hit, int): return hit
+    if hit is not None and time.monotonic() - hit[1] < EVENT_RETRY_S: return None
     buf = b"".join(b"".join(_peek_many(db, [(a, 64) for a in range(x, min(x + 4096, hi), 64)])) for x in range(lo, hi, 4096))
     i = buf.find(A.EVENT_START)
     while i >= 0 and buf[i + 6:i + 10] != A.EVENT_NEXT: i = buf.find(A.EVENT_START, i + 1)
-    _events[id(db)] = None if i < 0 else lo + i
-    return _events[id(db)]
+    # 2026-10-29: a miss used to be cached for good. The first read on the runway, before the list holds its takeoff and
+    # first sample records, then made read_events return [] all flight: the type-10 photo record (in memory ~1 s after
+    # the frame in both Oct 28-29 flights) was never seen and the photo run flew on into the target.
+    _events[id(db)] = (None, time.monotonic()) if i < 0 else lo + i
+    return None if i < 0 else lo + i
 
 
 # ------------------------------------------------------------------- readers as (requests, decoder) pairs
@@ -197,6 +203,19 @@ def read_trackcam(db):
     return _peek(db, A.TRACKCAM_MODE + find_offset(db), 1)[0]
 
 
+def read_trackcam_view(db):
+    """TrackcamView: screen id, view offset, night, B-blocked flags, cooldown and every record the B search walks
+    (ds:9500 of them, 16 B each: ~1.2 KB in one pipelined batch)."""
+    o = find_offset(db)
+    head = _peek_many(db, [(A.CAM_SCREEN + o, 2), (A.CAM_VIEW + o, 2), (A.NIGHT + o, 2), (A.CAM_FLAGS + o, 2),
+                           (A.CAM_COOLDOWN + o, 2), (A.N_SEARCHED + o, 2)])
+    screen, view, night, flags, cool, n = (_u16(h) for h in head)
+    n = min(n, 255)
+    raw = b"".join(_peek_many(db, _r_records(o, n)))
+    recs = tuple((k, *struct.unpack_from("<HH", raw, 16 * k + 2), raw[16 * k + 8]) for k in range(n))
+    return TrackcamView(screen, view, night, flags, cool, recs)
+
+
 def read_aircraft(db):
     """[dict(slot, x, y, alt, type, name, flags, alert)] of the 20 sim-object slots in use (x, y waypoint units)."""
     reqs, dec = _r_aircraft(find_offset(db))
@@ -323,6 +342,13 @@ def read_time_mult(db):
 def read_frame(db):
     """The u16 frame counter ds:5520 (wraps at 65536)."""
     return _u16(_peek(db, A.FRAME + find_offset(db), 2))
+
+
+def read_frame_fs(db):
+    """(frame counter ds:5520, frame scale ds:4EFC) in one round trip: what core.clock.FrameClock is fed."""
+    o = find_offset(db)
+    f, fs = _peek_many(db, [(A.FRAME + o, 2), (A.FRAME_SCALE + o, 2)])
+    return _u16(f), _u16(fs)
 
 
 def read_memory(db, lo=0, hi=0xA0000):

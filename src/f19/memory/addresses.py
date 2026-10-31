@@ -48,9 +48,16 @@ PROJ_SZ = 0x18
 TARGETS = ds(0x80AA)                             # 16-byte target records (.WLD order): +2 X, +4 Y, +6 radar type,
 TARGET_SZ = 0x10                                 #   +8 flags (0x80 destroyed, 0x02 on this duty window), +0x0A alert
 N_TARGETS = ds(0x9C78)                           # u16 record count
+# Trackcam target selection (EGAME 0xab84-0xacbc; docs/game/memory-map.md "Trackcam target selection", 2026-10-30)
+CAM_SCREEN = ds(0x9740)                          # u16 screen id; B works on 0x13 / 0x19 only ("/" sets 0x13)
+CAM_VIEW = ds(0x9E8C)                            # u16 view offset from the nose (0 ahead; 0x4000 = 90 deg)
+NIGHT = ds(0x4EF4)                               # u16 night flag: the B range is 100 << (6 - night) units
+CAM_FLAGS = ds(0x94E0)                           # u16: bit 0x80 set = B does nothing
+CAM_COOLDOWN = ds(0x8B22)                        # u16 frames; B does nothing while nonzero
+N_SEARCHED = ds(0x9500)                          # u16 records the B search walks (all world records; ds:9C78 is the enemy subset)
 THROTTLE = 0x40262                               # u8 percent
 STATION = 0x40A5A                                # u16 selected weapon station (& 3)
-LOADOUT = 0x40A4A                                # 4 x (u16 weapon index, u16 count), indices as analysis/ordnance.py
+LOADOUT = 0x40A4A                                # 4 x (u16 weapon index, u16 count), indices as `python -m f19.rules.weapons`
 GUN_ROUNDS = 0x40A5C                             # u16 nose-gun rounds (650 at start)
 BRIEF = 0x44304                                  # 2 x 0x12 briefing blocks (+0 type, +2 target record)
 HUD_LOCK = ds(0x6342)                            # u16 "Missile Lock" (disassembly; logged, not yet trusted)

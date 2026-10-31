@@ -48,7 +48,7 @@ Ramstein -> Rhein-Main). `scripts/read_mission.py` decodes it (output e.g.
   in NC, OTH Radar is 4 in CE).
 - **BRIEFING.TXT** is MicroProse LZW: byte 0 = max code width (11), codes LSB-first from 9 bits, first
   free code 257, dictionary reset when full. It holds 56 NUL-separated texts, and text n = mission n.
-  `analysis/mission_catalog.py` decodes it and writes **[MISSIONS.md](missions.md)** (every mission, its text and
+  `python -m f19.gamedata.missions` decodes it and writes **[MISSIONS.md](missions.md)** (every mission, its text and
   possible theaters). Theater bit order: 0 Libya, 1 Gulf, 2 North Cape, 3 CE (checked against the texts).
 
 - nav.py's "route belongs to this mission" check now compares the `slots` (still in memory in flight)
@@ -244,6 +244,7 @@ for that part.
   u16 at ~0x54106 read 80 = the record count (one sample; unconfirmed).
 - **Trackcam mode = u8 old phys 0x455A6**, F2 cycles it 2 -> 0 -> 1 -> 2. With the user's order nav -> air-to-ground ->
   air-to-air and the user's air-to-ground as the starting 2: **1 nav, 2 air-to-ground, 0 air-to-air** (inferred, check on the HUD).
+- **CORRECTION (2026-10-30):** the N and B descriptions below are observations; the decoded rules are in "Trackcam target selection: N, B, \"/\"" further down (N snaps to the 3D object under the nose line, not the nearest on-screen one; B steps outward by distance inside a +-45 deg cone).
 - **N (designate new target)** locked nothing in any mode while Mittenwalde was 25-40 deg off the nose at 33-40 km. With the
   target off screen the lock read 0 for an object 11 km dead ahead: **record 0 = the scratch slot for a generic 3D object**
   (the "other items" the user mentions). `scripts/acquire_target.py RECORD` keeps the trackcam in air-to-ground and presses N
@@ -258,6 +259,12 @@ for that part.
   The Attack controller now sets the trackcam (F2) and presses B until locked == the briefing record (up to 40).
   The photo close now also checks the event log for the type-10 record (`f19_state.read_events`; not yet run live:
   the port stopped answering right after, emulator presumably paused).
+  **CORRECTION (2026-10-29):** the type-10 record is in the list ~1 s after the camera frame (checked in the memlog snapshots of
+  the Kolobrzeg and Katowice flights: `8A 01 <t>` / `<xx> <yy>`, record 1; time field 0 until the next sample). The list sits at
+  **ds:0x89BA** in those loads (it is inside the memlog `egame_data` window); `addresses.EVENTS` ds:0x8E46 / `N_EVENTS` ds:0x632E
+  read zeros there, so `read_event_list` is stale. The live miss: `find_events` cached "not found" for the whole session when
+  the first read came before the list held its takeoff + first sample records; fixed by retrying a miss every 5 s. Not yet
+  confirmed live (replays pop the cache on every seek, so they never showed it).
 - **Trackcam must be ON for B (2026-10-18):** with the left CRT on the waypoint screen, B did nothing (the lock sat on 140,
   not a target record). `/` (trackcam ahead, D2 scancode 0x35) brought the camera up, locked on 32 (Mittenwalde AirBase),
   and one B press locked record 2. Attack prep order: F2 to air-to-ground, `/`, then B until locked == record.
@@ -291,7 +298,7 @@ for that part.
   25 % roll: range didn't cause it. The 6-15.5 km window stays only to follow the game's in-range cue.
 - **Where the 20 km came from:** not the file parsing (that gave lock 28 km / in-range 16 km, correctly). The 16-20 km window
   in [notes/targeting_for_planner.md](../design/targeting_for_planner.md) was built from the remark "the user fires at ~20 km" and the pop-up model (fire early,
-  turn away). The wrong part that came from parsing was the release_geometry.py sink model, which said a level shot below
+  turn away). The wrong part that came from parsing was the release-geometry sink model (now f19.rules.weapons), which said a level shot below
   200 ft sinks 300-650 ft into the ground and so produced the pop-up.
 - **CORRECTION: event type 4 = weapon launched at a target, not "Ineffective"** (2026-10-18). Two Maverick launches at 18.8 and
   16.9 km logged `(4, 0, 2, 3187)` and `(4, 0, 2, 3200)` within seconds of each launch; the earlier `(4, 0, 2, 2592)` was also the
@@ -415,6 +422,70 @@ for that part.
   at most 8 ft/s; pitch-tap gap scaled by airspeed/200 kt; predictive floor guard (alt + 5 s x vs < floor), off when a phase
   sets its own floor (landing). Not yet flown.
 
+## Trackcam target selection: N, B, "/" — EGAME disassembly + memlog replay (2026-10-30)
+
+How it was established: EGAME disassembly (key switch 0xd3a6, selection 0xab84-0xacbc, N 0xb858-0xb8f6, distance 0xc954/0xc994/0xd11b,
+scene snap 0xc892) and the decoded B rule replayed against memlog snapshots of three flights (1793126949, 1792724414, 1793382037).
+None of it depends on the difficulty (the only variable is night, ds:4EF4 = 0 in all three); every flight here was day. Untested live: a B probe.
+
+- **State:** ds:5526 = locked ground target (record index; -1 = none; **bit 0x80 set = a search is pending**, so -1 is itself "searching"),
+  ds:9A36 = trackcam mode (F2: 0 -> 1 -> 2 -> 0; 2 = air-to-ground), ds:9E8C = view offset (0 ahead, 0x4000/0x8000/0xC000 = the other
+  views), ds:9740 = screen id (0x13 / 0x19 = trackcam screens), ds:9500 = record count searched (75, all world records; ds:9C78 is only the
+  "enemy" subset), ds:8B22 = 4-frame retry cooldown, ds:4EF4 = night.
+- **"/" (0x352f)** = view ahead (9E8C = 0), **clears the lock to -1** (unless the screen is 0x19), switches to screen 0x13. Because -1 means
+  "searching", the next frame auto-acquires the **nearest** record in the cone. It is the "start the cycle over" key.
+- **B (0x3062)** only sets bit 0x80 on ds:5526 (and 5524). The pick runs in the per-frame trackcam code at 0xab84. It does nothing unless:
+  ds:9740 is 0x13 or 0x19, mode != 1, ds:94E0 bit 0x80 clear, cooldown 8B22 = 0. Then, over records 0..9499:
+  **candidate = not destroyed (+8 bit 0x80), octagonal dist >= dist(current lock), within +-45 deg (0x2000) of heading + view, dist < 100 << (6 - night)
+  units (6400 = 100 km day, 50 km night), and in modes 0/1 only enemy-side (+8 bit 0x01); mode 2 takes friendlies too. It takes the NEAREST
+  candidate.** If the current lock is -1 or itself outside the cone the floor is 0 (nearest of all). If there is none, the lock goes to -1 and the
+  next frame re-acquires the nearest, so B **wraps** (no wasted press).
+  So B only ever steps **outward** by distance through the **+-45 deg cone**; it never leaves the cone, and the set it walks is every record in the
+  cone, friendlies and the scratch record 0 (stale X,Y) included. 75 records means a lap can exceed Attack.B_MAX (40).
+- **N (0x316e)** is not "nearest on screen": it toggles ds:684C bit 0x100, which makes the frame code project the nose line to the ground
+  (alt / tan(-pitch) ahead, 640 units if the nose is level or up) and call 0xc892, which snaps to the 3D scene object at that point (0x11080, undecoded)
+  and takes the record **only if that object's X,Y equal a record's X,Y exactly**; otherwise it fills scratch record 0 and locks 0. A radar site is
+  several scene objects, so the nose point near a site usually snaps to a site object, not the neighbouring target: that is why N "locks the SAM".
+- **Replay checks (day):** 1793126949: at prep only record 44 is inside the cone and the wanted record 2 (11.6 km) is 97-126 deg off the nose, so
+  B reads 44 -> -1 -> 44 for 40 presses. 1792724414: wanted 19 at 65-150 deg; the in-cone set 2, 6, 34, 16, 38 is exactly the observed cycle
+  (6, 34, 16, 38, 2, ...). 1793382037 attack 1: ds:9740 = 0 for the whole run (the "/" never took), lock -1 for 40 presses.
+  Nav logs without a memlog fit the same rule: 51 <-> 4 and "47 x24" are a cone holding one or two records.
+- **Not explained:** 1793382037 attack 2 (secondary, record 1): the "/" took (9740 = 0x13), lock = 7 (the SA-14 site, 528 units), and
+  the wanted record 1 (848 units, 1 deg off the nose, flags 0, in the cone) was never selected in 40 presses. The decoded rule predicts 7 -> 1.
+  Only difference found vs the cycling flight: ds:4EEA (weapon station) = 1 (camera) instead of 0. Needs a live probe (peek 5526 / 4EEA around one B).
+
+
+### Trackcam pick: implementation and re-check (2026-10-30)
+
+How established: re-read EGAME 0xab2c-0xacbc line by line while writing `src/f19/rules/trackcam.py`; replayed the rule on the
+three memlogs (tests/unit/rules/test_trackcam.py); read the key switch at 0xd63f. Day only; difficulty does not enter the rule.
+
+- **No disagreement** with the rule above. Details the code pins down: the current lock is always excluded (`record + 0x80 == ds:5526`);
+  the floor is `dist(lock) - 1` and a record needs `floor < dist`, i.e. dist >= the lock's, so records at the **same** distance as the lock
+  are reachable; ties between candidates go to the **lower index** (strict `best <= d` skip); the floor only applies while the lock is
+  inside the cone (`angle <= 0x2000` keeps it, the candidate test is `< 0x2000`); **air-to-air (mode 0) lets a record outside the cone
+  through when the floor is > 0** (0xac2e-0xac39), mode 2 never does. Called every frame unconditionally (0x4bf), nothing there depends
+  on the weapon station.
+- **B (0xd63f)** is just `or byte [5526], 0x80` and `or byte [5524], 0x80`. ds:5524 is a second, separate search (0xad3d-): range
+  `0x4B << (6 - night)` units, a sim-object (air) target; it does not touch ds:5526.
+- **The record table** (ds:80AA, ds:9500 = count = .WLD header word 1: CE 75, GULF 64, NC 46, LIBYA 37): record 0 = scratch (0,0 at the
+  start), 1 and 2 = the generated target slots, record k >= 3 = .WLD place k - 3 (memlog 1793126949: positions match for all 72 CE places).
+  The planner builds this table (`World.trackcam_records`); aircraft and destroyed state are not in it.
+- **Replay checks (rules module, memlogs 1793126949 / 1792724414 / 1793382037)**: record 44 alone in the cone with the wanted 2 at +97 deg
+  (`out_of_cone`); the in-cone set 2, 6, 34, 16, 38 steps 2 -> 6 -> 34 -> 16 -> 38 -> 2; every lock seen in that stretch is in the set.
+  1793382037 attack 2: ds:5526 = 7 (no pending bit), ds:9740 = 0x13, ds:94E0 = 0, cooldown 0, mode 2, station 1 in every snapshot for 40+ s;
+  the rule predicts 7 -> 1 after one B. **Still unexplained**; the probe `research/scripts/probe_trackcam_b.py` (taps B and reads ds:5526
+  every 50 ms, per station) was written but NOT run (needs the owner's go-ahead for a live flight). Untested: night, Elite, mode 0.
+- **Autopilot (Attack.TRACKCAM_LOOP)**: "/" verified on ds:9740 in (0x13, 0x19) and view 0, no B while `selectable()` is false, "/" or B by
+  the shorter predicted way, each key's result compared with the prediction (mismatch = logged with the candidate list; 2 = alternate
+  "/" and B at 2 s), repeating transitions = 10 s hold, 90 game s budget. Offline only so far: unit tests with a fake game and the memlog
+  replays above (no B while record 2 is out of the cone; "/" re-sent every >= 1 s while ds:9740 stays 0). Not flown.
+- **Planner**: each attack run-in must hold >= 3 km (ACQ_MIN_KM) where the target is inside 35 deg / 90 km (45 km at night) of the nose and
+  "/" + at most 8 B reach it; the run-in is lengthened by 2/4/6 km before a bearing is dropped; no bearing = PlanError. The window is in
+  route.json (run-in point `acq`) and report.txt. Records the planner cannot know (aircraft, scratch record 0 after an N press) can still
+  change the live count: the autopilot's check is the safety net.
+
+
 ## Flight-log variables: fuel, damage, clock, IDs, threats — EGAME (2026-10-18)
 
 Decoded from the EGAME disassembly for the flight logger. ds offsets; phys = 0x3BB70 + ds + find_offset (as f19_state).
@@ -425,6 +496,12 @@ Decoded from the EGAME disassembly for the flight logger. ds offsets; phys = 0x3
   ds:4EFC frames; ds:5520 = frame counter. ds:4EFC (4 by default) is re-derived from the measured frame rate (0x4599) and
   halved by time acceleration (0xd590, ds:553A). A debug key adds/subtracts 0x3C (2 min) at 0xdc82. memlog: event records
   every 32 ticks carry exactly this clock.
+- **Game seconds per real second (measured 2026-10-30, 20 flights, 22 memlog runs 10-27 to 10-30; method: game clock ds:6630 against the snapshot wall
+  times, 60 s windows; live flights, F-19 under DOSBox-X with f19-dosbox.conf, Veteran/Elite, CE).** The time-multiplier byte (old phys 0x410AA, `ts`) is
+  RELATIVE: at byte 1 the median is **2.46** game s per real s (p10 2.20, p90 2.74, 8010 windows; the whole-flight medians of 18 flights lie in
+  2.35-2.63); at byte 2 (TIME x2) it is **4.98** (138 windows) = 2.02 x 2.46. Within a flight single windows range ~1.6-2.85 (scene load); values near 0
+  are pauses and save-state loads. Untested: byte 3+ (no flight used it), other machines or `cycles` settings (the rate is the emulator's, not the
+  game's). The first clock reading of a run (the first 1.5-6 s) is noisy (0.9-2.6 seen) and says nothing about the rate.
 
 **Fuel** (memlog: starts ~10000, -64 lb per 32 ticks at 50 % throttle = the formula)
 - **ds:4ED0 u16 fuel, lb** (main tanks). Set to 10000 at mission start (0x3cce). Burn (0x268c): every 2 x ds:4EFC frames
@@ -495,6 +572,20 @@ the territory grid (ds:85FC, the same 256 bytes as analysis/territory.py) and en
 "SA-14 fired" is shown, and the network alert fires. CE has 8 such cells, down the front line (column 4-7, rows 5-13).
 **The Tabor crash flight (nav 1792346075) entered SA-14 cell (7,13) 227 s before the crash; the debrief's first SA-14 hit
 was ~214 s before it.** The "lucky SA-14s" are these cells, not radar sites. Planner: avoid 0x10 cells by day.
+
+- **SA-14 cells are walls for the planner at Elite (2026-10-27).** The Elite Carlsbad plan (`ce_carlsbad_1027_1842`) flew
+  7.4 min through cell (4, 6) because its secondary, a photo of Wittenberg at (9800, 12984), sits in that cell and the
+  router only priced cells (30 samples per minute). Now (`settings.sa14` auto/hard/soft, profile `sa14_hard_from_opp` = 3):
+  live cells are walls in the route search and in `validate`; a secondary whose photo/overfly attack has to enter a cell is
+  skipped (a Maverick target in a cell is not: the launch point is 14 km out); the primary in a cell, or no route that
+  avoids them, makes the plan INVALID. Chance that one spawn check launches = P(random point of the cell is more than
+  (4 - opp) x 256 units from us) = 1 - pi (4-opp)^2 256^2 / 2048^2 (centre of the cell): green ~21 %, regular ~56 %,
+  veteran ~80 %, elite ~95 % (derived from the spawn rule above, not measured; the 57 Veteran SA-14s fit it). Checks
+  come every 32 game s, so 7 min in a cell is ~13 checks: a launch (and the network alert) is certain at Elite and likely at
+  Veteran. `alertsim` now models it (`!! PREDICTED SA-14 launch` in the report). Untested live: the skip/wall rules have
+  only been run offline. CE's cells (3,10) and (3,11) plug the only pass between the western mountains and Carlsbad's
+  pocket, so Carlsbad-type targets in the east pocket cannot be struck and left without entering a cell at Elite.
+  `scripts/mission_finder.py --no-sa14 / --sa14-primary / --sa14-secondary yes|no` filters missions by it.
 
 **Event list** (memlog-confirmed layout): ds:8E46, 6 B records `[u16 clock, u8 x>>7, u8 y>>7, u8 type|flags, u8 target]`,
 count ds:632E (max 255). Recorder 0x4b40(type, target). Types:

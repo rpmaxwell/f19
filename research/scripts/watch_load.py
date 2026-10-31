@@ -4,8 +4,9 @@ start and after 5 s (logs/probe/load_<t>.csv / .bin). Presses nothing."""
 import sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
-from f19_state import read_state, read_flight, read_sensitivity, _offset
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
+from f19.memory.reader import read_state, read_flight, read_sensitivity, _offset
 from probe_controls import snap
 ROOT = Path(__file__).resolve().parent.parent; t0 = int(time.time())
 out = open(ROOT / f"logs/probe/load_{t0}.csv", "w", buffering=1); out.write("t,alt,spd,hdg,pitch,roll,thr,flags,sens\n")

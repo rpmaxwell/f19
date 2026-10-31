@@ -1,26 +1,22 @@
-"""WP-7a loops vs nav: nav's loop code (scripts/nav.py :643-746, exec'd verbatim by nav_legacy) and f19.pilot.loops +
-Controls on the same tick inputs. Every tick: the same key events (tap / scan / down / up, hold times), the same
-press / rate / rate_cmd / roll event / vs / hold altitude, the same speed target, flaps flag, mission-log texts and
-timers (sens_next, last_press).
+"""Loops (f19.pilot.loops: heading hold, altitude hold, speed hold, flaps rule, sensitivity fix) with Controls: a
+CHARACTERISATION test. The same tick inputs that once ran next to nav's old inline loop code (the two agreed on every
+tick of ~33k) now run through Loops + Controls alone, and a digest of everything they output (key events with hold
+times, press / rate / rate_cmd / roll event / vs / hold altitude, the speed target, the flaps flag, log texts, timers)
+is compared with the stored digest of that agreeing run. A change of loop behaviour fails here: if it was meant, re-run
+with PRINT_DIGESTS=1 (pytest -s) and paste the new digests, saying why in the commit.
 
-Inputs: the replay fixtures' nav CSV rows (dense: every nav cycle, 0.2-1 s apart; alt / spd / hdg / want / tscale /
-phase / flags / throttle as logged) with the bank from the nearest memlog snapshot, and a synthetic closed loop. The
-overrides cycle through a fixed set covering every override the loops read (rate_cap, roll_hold, bank_max, alt,
-alt_cap, alt_min, vs_max, vs_target, deadband, floor, alt_hold, no_thr_up), with stretches of keyboard sensitivity 2,
-loiter legs, a leg alt_ft and the ALT file. Open loop on the replays (the recorded flight already shows what nav's
-keys did). The recording emulators can advance each side's clock by the hold time of a tap (blocking taps, as live):
-then nav's time.time()-after-the-tap timers and the loops' clock.now() must still agree. The one timer that differs
-by design: phases.set_toggle stamped the flaps debounce with time.time() after the tick's earlier blocking taps, the
-Toggle contract stamps it with the tick time (WP-7b); with adv the old set_toggle is therefore given the tick clock.
-"""
+Inputs: the replay fixtures' nav CSV rows (dense: every nav cycle) with the bank from the nearest memlog snapshot, and a
+synthetic closed loop. The overrides cycle through a fixed set covering every override the loops read, with stretches of
+keyboard sensitivity 2, loiter legs, a leg alt_ft and the ALT file. Open loop on the replays. The recording emulator can
+advance the clock by the hold time of a tap (blocking taps, as live)."""
 import bisect
+import hashlib
 import math
-from types import SimpleNamespace
+import os
 
 import pytest
 
-import nav_legacy as N
-from pilot_equiv import KeyLog, OldPhases, product
+from pilot_worlds import KeyLog
 import harness as H  # noqa: E402
 from f19.core.clock import ManualClock
 from f19.core.types import Attitude, Command, FlightContext, GameState, Position, Systems
@@ -28,7 +24,30 @@ from f19.memory import ReplayReader
 from f19.pilot.controls import Controls
 from f19.pilot.loops import Loops, Modes, SpeedHold
 
-ph = product.phases()
+# digest of every tick's outputs per scenario (see the module docstring); recorded 2026-10-30 from the run that agreed with nav's old loop code
+GOLD = {
+'1792609731-auto-False': '7de852b4c08b420c',
+    '1792546698-auto-False': '7ca206e1e3e1568c',
+    '1792715432-auto-False': 'df05f8c8dc1b60e9',
+    '1792609731-hdg-False': '80d56dc039c82587',
+    '1792546698-hdg-False': '3d8e9589ef3ccc4d',
+    '1792715432-hdg-False': '7592014486a339c1',
+    '1792609731-alt-False': '20ed85c65417bbc9',
+    '1792546698-alt-False': '7ed560efdf0f0086',
+    '1792715432-alt-False': '154c8edb2a2b9d2b',
+    '1792609731-auto-True': '15024a5699c8444d',
+    '1792546698-auto-True': '6073f97d0cc3acd9',
+    '1792715432-auto-True': '28ab7a67e89c94f4',
+    '1792609731-hdg-True': '0b8843aac6bff886',
+    '1792546698-hdg-True': '106238469e1006aa',
+    '1792715432-hdg-True': '64a1f9ceb17f0419',
+    '1792609731-alt-True': 'a1e38a11ceef234c',
+    '1792546698-alt-True': '4c53fb9d6ea16ce4',
+    '1792715432-alt-True': '158db5633098bf0c',
+    'synthetic': '09c7f844b77e641e',
+}
+
+
 OVS = [{}, {"rate_cap": 3.0}, {"rate_cap": 1.5, "floor": 0, "alt_cap": 300.0, "vs_max": 6.0},
        {"roll_hold": False, "alt_hold": False}, {"bank_max": 45.0, "alt_min": 250, "rate_cap": 2.2},
        {"alt": 1500, "vs_max": 20.0}, {"vs_target": -3.0, "deadband": 2.0, "no_thr_up": True, "floor": 0},
@@ -49,72 +68,44 @@ class AdvKeyLog(KeyLog):
         if self.adv: self.advance(hold_secs)
 
 
-class Log:
-    def __init__(self): self.rows = []
-    def writerow(self, r): self.rows.append(r)
-
-
 class Pair:
-    """Old (nav's exec'd code + phases.Throttle) and new (Loops + Controls) side by side."""
+    """Loops + Controls on a recording emulator; every tick's outputs go into a digest."""
     def __init__(self, mode, alt_file, adv, thr0=190.0):
         a = ARGS[mode]
-        self.op = OldPhases(synthetic=False).__enter__()
-        # nav's time.time() (sens_next, last_press: read after a blocking tap) advances with the taps; phases.set_toggle's
-        # clock (the flaps debounce) stays at the tick time: the Toggle contract debounces on the tick clock (WP-7b)
-        # where set_toggle read time.time() after the tick's earlier blocking taps
-        oc = SimpleNamespace(t=0.0); oc.time = lambda: oc.t; oc.sleep = lambda s: None
-        self.oc = oc
-        self.odb = AdvKeyLog(lambda d: setattr(oc, "t", oc.t + d), adv)
-        self.othr = ph.Throttle(); self.othr.target = thr0 if a["auto"] else None
-        ns = dict(K=64.0); exec(N.CONSTANTS, ns)
-        self.events_old = []
-        ns.update(args=SimpleNamespace(**a, fixed=None), db=self.odb, time=oc, phases=ph, thr=self.othr, log=Log(),
-                  combat_log=lambda now: None, read_sensitivity=lambda db: ns["_sens"], time_mult=lambda db: ns["_ts"],
-                  in_loiter=lambda leg: ns["_loiter"], leg_attrs=lambda leg: ns["_attrs"], ALT_FILE=alt_file, hist=[],
-                  last_press=0.0, sens_next=0.0, slow_flaps=False, climbed=False, phase_event=self.events_old.append,
-                  tko=None, leg=1)
-        self.ns = ns
         self.clock = ManualClock(0.0)
         self.emu = AdvKeyLog(self.clock.advance, adv)
-        self.speed = SpeedHold(); self.speed.target = self.othr.target
+        self.speed = SpeedHold(); self.speed.target = thr0 if a["auto"] else None
         self.ctl = Controls(self.emu, self.speed)
         self.modes = Modes(hdg=a["hdg"], alt=a["alt"], auto=a["auto"])
         self.loops = Loops(self.clock, self.modes, alt_file, self.speed)
         self.ctx = FlightContext(self.clock)
-        self.n = self.equal = 0
-        self.first = ""
+        self.n = 0
+        self.h = hashlib.sha256()
         self.presses = set()
-
-    def close(self): self.op.__exit__(None, None, None)
+        self.events = []
 
     def tick(self, t, alt, spd, hdg, want, ts, phase, flags, throttle, roll, sens, loiter, leg_alt, ov, tko_active):
-        ns = self.ns
-        self.oc.t = self.op.clock.t = t; self.clock.set(t)
-        s = dict(alt=alt, spd=spd, hdg=hdg, x=0, y=0)
-        f = dict(roll=roll, flags=flags, throttle=throttle, pitch=0.0)
-        attrs = {} if leg_alt is None else {"alt_ft": leg_alt}
-        ns.update(s=s, ov=dict(ov), want=want, now=t, phase=phase, _sens=sens, _ts=ts, _loiter=loiter, _attrs=attrs,
-                  tko=SimpleNamespace(finished=False) if tko_active else None)
-        if self.modes.auto: ns["f"] = f
-        n_ev = len(self.events_old)
-        exec(N.LOOPS, ns)
-        okeys = self.odb.take()
+        self.clock.set(t)
         st = GameState(t=None, pos=Position(0.0, 0.0, alt), att=Attitude(hdg, 0.0, roll), speed_kt=spd,
                        systems=Systems(flags=flags, throttle=throttle), sensitivity=sens, time_mult=ts)
         cmd = Command(heading=want, rate_cap=2.5 if loiter else 0.8, alt=leg_alt).merged(Command.from_overrides(ov))
         rep = self.loops.step(self.ctl, st, cmd, self.ctx, phase, tko_active, now=t)
         nkeys = self.emu.take()
-        old = (okeys, ns["press"], ns["rate"], ns["rate_cmd"], ns["roll_evt"], ns.get("vs") if ns["hold_alt"] is not None else None,
-               ns["hold_alt"], self.othr.target, ns["slow_flaps"], [e.split(" ", 1)[1] for e in self.events_old[n_ev:]], ns["sens_next"],
-               ns["last_press"], ns["roll"]["key"], ns["args"].alt)
         new = (nkeys, rep.press, rep.rate, rep.rate_cmd, rep.roll_evt, rep.vs, rep.hold_alt, self.speed.target,
                self.loops.flaps.slow_flaps, rep.events, self.loops.sens.next, self.loops.altitude.last_press,
                self.loops.heading.key, self.modes.alt)
-        self.n += 1; ok = old == new; self.equal += ok
-        if not ok and not self.first: self.first = f"tick {self.n} t={t}: old {old}\n new {new}"
+        self.n += 1; self.h.update(repr(new).encode()); self.events += rep.events
         for p in (rep.press or "").split(): self.presses.add(p)
         if rep.roll_evt: self.presses.add(rep.roll_evt.split(" ")[0])
-        return okeys
+        return nkeys
+
+    @property
+    def digest(self): return self.h.hexdigest()[:16]
+
+
+def _check(name, got):
+    if os.environ.get("PRINT_DIGESTS"): print(f"DIGEST {name!r}: {got!r},")
+    else: assert got == GOLD[name], f"{name}: loop behaviour changed (digest {got}, stored {GOLD[name]})"
 
 
 def _num(v, d=0):
@@ -126,14 +117,14 @@ def _num(v, d=0):
 @pytest.mark.parametrize("run_id", ["1792609731", "1792546698", "1792715432"])
 @pytest.mark.parametrize("mode", ["auto", "hdg", "alt"])
 @pytest.mark.parametrize("adv", [False, True])
-def test_loops_match_nav_on_replays(run_id, mode, adv, tmp_path, egame):
+def test_loops_on_replays(run_id, mode, adv, tmp_path, egame):
     R = H.Run.load(run_id)
     rr = ReplayReader(R.dir)
     rolls = [(t, st.att.roll) for t, st in rr.states(threats=False)]
     rt = [t for t, _ in rolls]
     alt_file = tmp_path / "ALT"
     P = Pair(mode, alt_file, adv)
-    try:
+    if True:
         for i, r in enumerate(R.rows):
             t = float(r["t"])
             k = min(max(bisect.bisect_left(rt, t), 0), len(rt) - 1)
@@ -144,19 +135,17 @@ def test_loops_match_nav_on_replays(run_id, mode, adv, tmp_path, egame):
                    2 if i % 700 < 12 else 1, (i // 300) % 4 == 1, 700 if (i // 450) % 3 == 2 else None,
                    OVS[(i // 37) % len(OVS)], r["phase"] == "takeoff")
         assert P.n > 1000
-        assert P.equal == P.n, P.first
-    finally:
-        P.close()
-    print(f"loops {run_id} {mode} adv={adv}: {P.n} ticks equal; presses seen {sorted(P.presses)}")
+    _check(f"{run_id}-{mode}-{adv}", P.digest)
+    print(f"loops {run_id} {mode} adv={adv}: {P.n} ticks; presses seen {sorted(P.presses)}")
 
 
-def test_loops_match_nav_closed_loop_synthetic(egame, tmp_path):
+def test_loops_closed_loop_synthetic(egame, tmp_path):
     """A crude closed loop (the keys move the plane) through the branches the replays rarely reach: a slow sag below
     140 kt (flaps rule, throttle guard, slow: no pull), a dive toward the floor (UP!, SINK!), a deep bank (bank limit),
     a stuck turn with no key held (UNSTICK), sensitivity 3."""
     P = Pair("auto", tmp_path / "ALT", True, thr0=200.0)
     alt, spd, hdg, roll, vs, thr, flags = 600.0, 200.0, 0.0, 0.0, 0.0, 60, 0x01
-    try:
+    if True:
         for i in range(3000):
             t = 1_800_000_000.0 + i * 0.25
             phase = "route"
@@ -179,8 +168,6 @@ def test_loops_match_nav_closed_loop_synthetic(egame, tmp_path):
             if i >= 700: spd = min(260.0, spd + (thr - 55) * 0.01)
             if not (1500 <= i < 1560): hdg = (hdg + math.tan(math.radians(roll)) * 0.5) % 360
             if not (1200 <= i < 1260): roll *= 0.98
-        assert P.equal == P.n, P.first
         assert {"UP!", "SINK!", "up", "down", "UNSTICK", "BANK", "THR", "thr+", "thr-"} <= P.presses, P.presses
-        assert any("flaps down" in e for e in P.events_old)
-    finally:
-        P.close()
+        assert any("flaps down" in e for e in P.events)
+    _check("synthetic", P.digest)

@@ -53,7 +53,8 @@ KEYS = {Action.GEAR_TOGGLE: "6", Action.FLAPS_TOGGLE: "9", Action.BRAKES_TOGGLE:
 SCANS = {Action.TRACKCAM_VIEW: (SLASH, False), Action.THROTTLE_MAX: (EQUALS, True), Action.THROTTLE_IDLE: (MINUS, True),
          Action.THROTTLE_UP: (EQUALS, False), Action.THROTTLE_DOWN: (MINUS, False),
          Action.EJECT: (F10, True)}              # same shifted-scancode path as Shift+= (max power); NOT yet tried live
-# Actions with no key yet (DESIGNATE): apply() raises rather than guessing a key.
+# Actions with no key yet (DESIGNATE): dropped and counted in Controls.unsupported (a runner crash mid-flight is worse than a skipped tap).
+NO_KEY = frozenset({Action.DESIGNATE})
 
 
 class SpeedTarget:
@@ -69,6 +70,7 @@ class Controls:
         self.emu = emulator
         self.speed = speed if speed is not None else SpeedTarget()
         self.held = set()                      # keys this Controls holds down
+        self.unsupported = {}                  # action -> times dropped for lack of a key (NO_KEY)
         self.scheduled = {}                    # key -> release time (hold / service)
         self.band_next = -math.inf             # pitch band: no band tap before this (tick clock)
         self.held_other = set()                # the other held keys the last tick the trigger was held
@@ -118,6 +120,7 @@ class Controls:
             code, shift = SCANS[a]; self.scan(code, shift)
             if a in (Action.THROTTLE_MAX, Action.THROTTLE_IDLE): self.speed.target = None
             return
+        if a in NO_KEY: self.unsupported[a] = self.unsupported.get(a, 0) + 1; return
         if a not in KEYS: raise ValueError(f"Controls: no key for {a}")
         self.tap(KEYS[a])
 

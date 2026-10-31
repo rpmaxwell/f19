@@ -8,8 +8,9 @@ the nose (it must be on screen). No flight controls. Logs every lock to logs/pro
 import argparse, csv, math, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
-from f19_state import read_state, read_flight, read_target, _peek, find_offset
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
+from f19.memory.reader import read_state, read_flight, read_target, _peek, find_offset
 
 TRACKCAM_MODE, AIR_GROUND = 0x455A6, 2
 ap = argparse.ArgumentParser(); ap.add_argument("record", type=int); ap.add_argument("--cone", type=float, default=20)

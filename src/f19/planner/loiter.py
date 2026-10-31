@@ -31,17 +31,7 @@ PAD_KM = 12.0
 CAP_KM = 10.0
 
 
-def rough_ceiling(opp):
-    """Largest return any Soviet radar type gets on a plane in a rough cell (brute force, 150-300 kt)."""
-    best = 0
-    for t in range(1, 23):
-        R, P, _ = rg.radar_spec(t)
-        if not R or R > 1000: continue
-        for d in (1, 2, 4, 8, 16):
-            for h in range(0, 65536, 4096):
-                for kt in (150, 200, 250, 300):
-                    best = max(best, rg.site_return(d * 64, 0, 300, h, kt, opp, 4, 0, 0, t))
-    return best
+rough_ceiling = rg.rough_ceiling          # rules.radar has the one copy
 
 
 def loiter_emv(P, opp, kt=200):

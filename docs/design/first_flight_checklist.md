@@ -13,12 +13,13 @@ Attach for every step: the csv, events, keys files, `memlog/<epoch>/` if made, a
   target from before the episode is restored. The old nav's three saved speeds fought each other.
 - **Timers run on the tick clock** (the tick's `now`), not drifting by the length of blocking taps.
 - **Short taps still block** for their hold time (as before); only roll keys, pitch hold and the trigger are non-blocking.
-- **WallClock** is still in use (game clock is a later, separate step), so time-warp (`TIME xN`) behaves as in nav.
+- **Timers run on real seconds, tuned at the game's normal speed** (2.46 game s per real s at time byte 1, measured 2026-10-30); the loops divide by the time byte, which is relative, so `TIME xN` behaves as in nav. The `clock:` line in the mission log (every 120 s) shows the measured speed relative to the tuned one and says OUTSIDE when it is off by more than 0.8-1.25.
 - `--fixed` is gone. `--plain` is the old one-column text; the HUD is the new tiled one (falls back to plain if it fails).
 - New: `--director` (replans, bail-out/eject chain), `--no-keys`, event-list based HUD.
-- **Eject is gated** (2026-10-26): without `--allow-eject` the director's eject is suppressed. The action is dropped, the mission
-  log says `EJECT suppressed: --allow-eject not given - still flying`, the banner shows `WOULD EJECT`, and the flight goes on
-  (no exit; the director then plans no more). Pass `--allow-eject` only for step (g) or a flight where you want the bail-out.
+- **Eject is on by default** (2026-10-29; it was gated behind `--allow-eject` from 2026-10-26): the director's bail-out levels the plane
+  first (`pilot/eject.py`), then sends Shift+F10. Shift+F10 was tried live twice that day (level, S 425 and S 272; both ejections succeeded).
+  `--no-eject` suppresses it: the action is dropped, the mission log says `EJECT suppressed: --no-eject given - still flying`, the banner
+  shows `WOULD EJECT`, and the flight goes on (no exit; the director then plans no more). `--allow-eject` is still accepted (no-op).
 - Compare against the old nav's logs of the same flight type: `want` (route heading), `press` column, event texts, phase times
   ("takeoff done", "primary attack done", landing), cycle_s (should stay ~0.15-0.3 s; with `--memlog` ~0.05 s sleep).
 - **Untried live:** Shift+F10 (eject), POKE, key latency/hold times, Settle + `after_load`, hand-over roll-level, the missile-world read cost

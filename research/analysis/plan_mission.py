@@ -1,4 +1,4 @@
-"""SUPERSEDED by analysis/planner (python analysis/planner <plan_dir>); kept to reproduce old plans.
+"""SUPERSEDED by src/f19/planner (python -m f19.planner <plan_dir>); kept to reproduce old plans.
 
 Plan a stealth route for the mission read from memory (scripts/read_mission.py).
 
@@ -84,11 +84,11 @@ stops = [[f"Takeoff ({takeoff})", to_px(tx, ty)],
          ["Final", to_px(lx, ly + side * FINAL_KM * K)],
          [f"Landing ({landing})", to_px(lx, ly)]]
 # Terrain: the planner reads the decoded 3D terrain (logs/theater/<TH>_terrain.npz from
-# analysis/terrain_3d.py) via THEATER. The old crash-site keep-out discs are only used
+# python -m f19.gamedata.terrain) via THEATER. The old crash-site keep-out discs are only used
 # with CRASH_DISCS=1 (they're now a validation set; every terrain crash is inside a
 # decoded mountain).
 if not (ROOT / "logs/theater" / f"{theater}_terrain.npz").exists():
-    subprocess.run([sys.executable, str(ROOT / "analysis/terrain_3d.py"), theater], check=True)
+    subprocess.run([sys.executable, "-m", "f19.gamedata.terrain", theater], check=True)
 obs_f = ROOT / "logs/theater" / f"{theater}_obstacles.json"
 obs = json.load(open(obs_f))["obstacles"] if obs_f.exists() and os.environ.get("CRASH_DISCS") == "1" else []
 json.dump([dict(px=to_px(o["x"], o["y"]), radius_km=o["radius_km"]) for o in obs], open(plan / "obstacles.json", "w"), indent=1)
