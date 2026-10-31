@@ -1,21 +1,19 @@
-"""WP-7b equivalence, reactions: OLD scripts/phases.py FuelTransfer / FighterWatch / TerrainEscape and
-scripts/missile_watch.py MissileWatch / CmKeys vs NEW f19.pilot.reactions on synthetic sequences and on the replay
-fixtures (the same inputs the WP-1 harness feeds). Each tick: the same override dict (Command.to_overrides), the same
-event texts, the same keys (FuelTransfer / CmKeys, through the FakeControls adapter) and the same internal state."""
+"""Reactions (f19.pilot.reactions: FuelTransfer, CmKeys, TerrainEscape, FighterWatch, MissileWatch) on synthetic sequences
+and on the replay fixtures (the same inputs the WP-1 harness feeds); each scenario's outcome (states reached, event
+texts, keys) is asserted. Until 2026-10-30 the same inputs also ran the old scripts/phases.py / missile_watch.py side by
+side and compared every tick; that oracle is retired."""
 import copy
 import math
 
 import pytest
 
-from pilot_equiv import (FakeControls, KeyLog, OldDB, apply_keys, flat_state, gamestate, product, run_phase, run_reaction,
-                         world)
-import harness as H  # noqa: E402  (pilot_equiv put tests/replay on sys.path)
+from pilot_worlds import FakeControls, apply_keys, flat_state, gamestate, run_new, run_react, world
+import harness as H  # noqa: E402  (pilot_worlds put tests/replay on sys.path)
 from f19.core.clock import ManualClock
 from f19.core.types import FlightContext, GameState
 from f19.pilot.reactions import CmKeys, FighterWatch, FuelTransfer, MissileWatch, TerrainEscape
 
 T0, DT = 1_800_000_000.0, 0.25
-ph = product.phases()
 need_fix = pytest.mark.skipif(not H.have_fixtures(), reason="replay fixtures missing")
 
 
@@ -36,21 +34,13 @@ def fuel_world(enter_works=True, space_works=True, fuel=640):
     return w, after
 
 
-def fuel_step(o, db, w, t):
-    ev = o.step(db, w["f"], t)
-    if ev: o.log.append(ev)
-    return {}
-
-
 @pytest.mark.parametrize("case", ["two_tanks", "retry", "enter_fails", "space_fails", "above_low"])
-def test_fuel_transfer_equivalent(case):
+def test_fuel_transfer(case):
     kw = dict(two_tanks={}, retry=dict(enter_works="late"), enter_fails=dict(enter_works=False),
               space_fails=dict(space_works=False), above_low=dict(fuel=50000))[case]
     w, after = fuel_world(**kw)
-    old, new = ph.FuelTransfer(), FuelTransfer()
-    rep = run_phase(old, new, ((T0 + i * DT, w) for i in range(4000)), fuel_step, after=after,
-                    extra=lambda b: (b.state, b.target, b.tries, b.space, tuple(sorted(b.failed)), b.busy, round(b.next_ok, 6)))
-    assert rep.all_equal, rep.first_diff
+    new = FuelTransfer()
+    rep = run_new(new, ((T0 + i * DT, w) for i in range(4000)), after=after)
     logs = " | ".join(new.log)
     expect = dict(two_tanks=["transferred from station 1", "transferred from station 3"], retry=["(try 2)"],
                   enter_fails=["FAILED after 4 Enter presses"], space_fails=["Space never reached station 1"], above_low=[])[case]
@@ -60,18 +50,17 @@ def test_fuel_transfer_equivalent(case):
 
 
 # ----------------------------------------------------------------------------------------------------- CmKeys
-def test_cmkeys_equivalent():
+def test_cmkeys():
     """request / jam / step on a synthetic world: a flare that lands after 1 tap, a chaff that needs a retry, a decoy
     never confirmed (given up after 3 taps), the radar jammer on and off, an empty store, a request while busy."""
-    MW = product.missile_watch()
-    old, new = MW.CmKeys(), CmKeys()
-    db = OldDB(); ctx = FlightContext(ManualClock(0.0)); ctrl = FakeControls(ctx)
+    new = CmKeys()
+    ctx = FlightContext(ManualClock(0.0)); ctrl = FakeControls(ctx)
     snap = dict(stores=[3, 3, 2], world=dict(flags=0))
     st0 = gamestate(world())
     script = {0: ("request", 1), 4: ("request", 2), 5: ("request", 3), 30: ("request", 3), 70: ("jam", "ecm", True),
               71: ("request", 1), 90: ("jam", "ecm", False), 110: ("request", 2)}
     land = {2: ("stores", 0), 20: ("stores", 1), 72: ("flags", 0x10), 92: ("flags", 0)}
-    n = eq = 0
+    sent = []
     for i in range(140):
         t = T0 + i * DT
         if i in land:
@@ -79,22 +68,20 @@ def test_cmkeys_equivalent():
             if k == "stores": snap["stores"][v] -= 1
             else: snap["world"]["flags"] = v
         if i == 100: snap["stores"][1] = 0
-        outs_old, outs_new = [], []
+        keys = []
         if i in script:
             op = script[i]
-            if op[0] == "request":
-                outs_old.append(old.request(db, op[1], snap, t)); a, e = new.request(op[1], snap, t)
-            else:
-                outs_old.append(old.jam(db, op[1], op[2], snap, t)); a, e = new.jam(op[1], op[2], snap, t)
-            outs_new.append(e); new_keys = ctrl.apply(_cmd(a), st0, t)
-        else: new_keys = []
-        outs_old.append(old.step(db, snap, t)); a, e = new.step(snap, t); outs_new.append(e)
-        new_keys += ctrl.apply(_cmd(a), st0, t)
-        same = outs_old == outs_new and db.take() == new_keys and old.pending == new.pending and old.failed == new.failed
-        n += 1; eq += same
-        assert same, (i, outs_old, outs_new)
-        old.failed = new.failed = None
-    assert eq == n
+            if op[0] == "request": a, e = new.request(op[1], snap, t)
+            else: a, e = new.jam(op[1], op[2], snap, t)
+            keys += ctrl.apply(_cmd(a), st0, t)
+        a, e = new.step(snap, t); keys += ctrl.apply(_cmd(a), st0, t)
+        if keys: sent.append((i, keys))
+        new.failed = None
+    # flare: one tap (lands at 2); chaff: a retry 8 ticks later (lands at 20); decoy: never confirmed, 3 taps then given up;
+    # the request at 5 (busy) and the one at 71 (jam still pending) send nothing; jammer on at 70, off at 90; the empty store at 110: nothing
+    assert sent == [(0, [("tap", "1", 0.2)]), (4, [("tap", "2", 0.2)]), (12, [("tap", "2", 0.2)]), (30, [("tap", "5", 0.2)]),
+                    (38, [("tap", "5", 0.2)]), (46, [("tap", "5", 0.2)]), (70, [("tap", "4", 0.2)]), (90, [("tap", "4", 0.2)])], sent
+    assert new.pending is None
 
 
 def _cmd(actions):
@@ -109,7 +96,7 @@ def ridge_probe(ridge_y, top):
         hr = math.radians(hdg)
         for i in range(1, int(max_km / 0.25) + 1):
             d = i * 0.25; x, y = p[0] + math.sin(hr) * d * 64, p[1] - math.cos(hr) * d * 64
-            if y <= ridge_y and x < 22000 and top >= alt - ph.TerrainEscape.MARGIN_FT: return d, top
+            if y <= ridge_y and x < 22000 and top >= alt - TerrainEscape.MARGIN_FT: return d, top
         return None
     return probe
 
@@ -121,46 +108,39 @@ def _ev1(r):
 @pytest.mark.parametrize("top,alt", [(400, 380), (420, 300), (330, 360)])
 def test_terrain_escape_synthetic(top, alt):
     """Flying north at a ridge: turn (the clear heading nearest the route), climb when it isn't clearing in time,
-    clear after CLEAR_S; old vs new on the same inputs every tick."""
+    clear after CLEAR_S."""
     probe = ridge_probe(20000, top)
-    old, new = ph.TerrainEscape(probe), TerrainEscape(probe)
+    new = TerrainEscape(probe)
     x, y, hdg, inputs = 20000.0, 20400.0, 0.0, []
     for i in range(400):
         t = T0 + i * 0.25
         inputs.append((t, flat_state(alt, 190, hdg, x, y, time_mult=1.0), 350.0, (dict(alt=alt, spd=190, hdg=hdg), (x, y))))
         v = 0.6; x += v * math.sin(math.radians(hdg)) * 64 * 0.25; y -= v * math.cos(math.radians(hdg)) * 64 * 0.25
         hdg = (hdg + (6 if 20 < i < 80 else 0)) % 360
-    rep = run_reaction(lambda t, it: _ev1(old.step(it[0], it[1], t, 350.0, 1.0)), new, inputs)
-    assert rep.all_equal, rep.first_diff
+    rep = run_react(new, inputs)
     assert "turn" in rep.states or "climb" in rep.states, rep.states
     print(f"terrain escape top {top} alt {alt}: {rep.ticks} ticks, states {rep.states}")
 
 
 @need_fix
 @pytest.mark.parametrize("margin", [None, 150])
-def test_terrain_escape_replay(margin):
+def test_terrain_escape_replay(monkeypatch, margin):
     """Every nav-CSV row of 1792609731 where nav called TerrainEscape (as tests/replay/harness.replay_terrain_escape)."""
     R = H.Run.load("1792609731")
     probe = H.make_terrain_ahead(R.plan_dir / "terrain.npz")
-    saved = ph.TerrainEscape.MARGIN_FT, TerrainEscape.MARGIN_FT
-    if margin: ph.TerrainEscape.MARGIN_FT = TerrainEscape.MARGIN_FT = margin
-    try:
-        mk = lambda cls: (lambda p_, h_, a_, mk_: probe(p_, h_, a_, max_km=mk_, margin_ft=cls.MARGIN_FT))
-        old, new = ph.TerrainEscape(mk(ph.TerrainEscape)), TerrainEscape(mk(TerrainEscape))
-        inputs, route_want = [], None
-        for r in R.rows:
-            if r["phase"] not in ("route", "attack", "strafe") or int(r["alt"]) <= 100: continue
-            if not r.get("escape") and not r.get("fighter") and not r.get("missile"): route_want = float(r["want"])
-            rw = route_want if route_want is not None else float(r["want"])
-            s = dict(alt=int(r["alt"]), spd=int(r["spd"]), hdg=float(r["hdg"])); p = (float(r["x"]), float(r["y"]))
-            inputs.append((float(r["t"]), flat_state(s["alt"], s["spd"], s["hdg"], *p, time_mult=float(r["tscale"] or 1)),
-                           rw, (s, p, rw, float(r["tscale"] or 1))))
-        rep = run_reaction(lambda t, it: _ev1(old.step(it[0], it[1], t, it[2], it[3])), new, inputs)
-    finally:
-        ph.TerrainEscape.MARGIN_FT, TerrainEscape.MARGIN_FT = saved
-    assert rep.all_equal, rep.first_diff
+    if margin: monkeypatch.setattr(TerrainEscape, "MARGIN_FT", margin)
+    new = TerrainEscape(lambda p_, h_, a_, mk_: probe(p_, h_, a_, max_km=mk_, margin_ft=TerrainEscape.MARGIN_FT))
+    inputs, route_want = [], None
+    for r in R.rows:
+        if r["phase"] not in ("route", "attack", "strafe") or int(r["alt"]) <= 100: continue
+        if not r.get("escape") and not r.get("fighter") and not r.get("missile"): route_want = float(r["want"])
+        rw = route_want if route_want is not None else float(r["want"])
+        s = dict(alt=int(r["alt"]), spd=int(r["spd"]), hdg=float(r["hdg"])); p = (float(r["x"]), float(r["y"]))
+        inputs.append((float(r["t"]), flat_state(s["alt"], s["spd"], s["hdg"], *p, time_mult=float(r["tscale"] or 1)),
+                       rw, None))
+    rep = run_react(new, inputs)
     assert "turn" in rep.states, rep.states
-    print(f"terrain escape replay (margin {margin or 100}): {rep.ticks} rows all equal, states {rep.states[:8]}...")
+    print(f"terrain escape replay (margin {margin or 100}): {rep.ticks} rows, states {rep.states[:8]}...")
 
 
 # ----------------------------------------------------------------------------------------------------- fighter watch
@@ -173,7 +153,7 @@ def test_fighter_watch_synthetic():
     """A MiG-29 (doppler) closing head-on with a rising alert, a MiG-23 (pulse) abeam, a friendly F-18, then all gone:
     evade, keep, clear after CLEAR_S."""
     gbyte, ttype = H.theater_grid("CE")
-    old, new = ph.FighterWatch(ttype, gbyte), FighterWatch(ttype, gbyte, descend_first=False, legacy=True)
+    new = FighterWatch(ttype, gbyte, descend_first=False, legacy=True)
     x, y, inputs = 15000.0, 20000.0, []
     for i in range(240):
         t = T0 + i * 0.5
@@ -185,80 +165,61 @@ def test_fighter_watch_synthetic():
         st = _aircraft_state(s, p, ac, 2)
         inputs.append((t, st, 10.0, (s, p, ac)))
         y -= 8
-    rep = run_reaction(lambda t, it: old.step(it[0], it[1], t, 10.0, it[2], 2), new, inputs)
-    assert rep.all_equal, rep.first_diff
+    rep = run_react(new, inputs)
     assert rep.states == ["off", "evade", "off"] or "evade" in rep.states, rep.states
-    assert new.nearest == old.nearest
     print(f"fighter synthetic: {rep.ticks} ticks, states {rep.states}")
 
 
 @need_fix
 def test_fighter_watch_replay():
     """Every snapshot of 1792715432 where nav called FighterWatch (as harness.replay_fighter_watch)."""
-    R = H.Run.load("1792715432"); fs = product.f19_state()
+    from f19.memory import MemoryReader
+    R = H.Run.load("1792715432")
     gbyte, ttype = H.theater_grid(R.mission.get("theater", "CE"))
-    old, new = ph.FighterWatch(ttype, gbyte), FighterWatch(ttype, gbyte, descend_first=False, legacy=True)
-    db = R.db(); inputs, route_want, ri = [], None, 0
+    new = FighterWatch(ttype, gbyte, descend_first=False, legacy=True)
+    db = R.db(); reader = MemoryReader(db); inputs, route_want, ri = [], None, 0
     for t, raw in R.snaps():
         db.load(raw, t)
-        try: st = fs.read_state(db, tries=1)
+        try: gs = reader.snapshot()
         except RuntimeError: continue
-        if not st["x"]: continue
+        if not gs.pos.x: continue
         row = R.row_at(t)
         while ri < len(R.rows) and R.row_t[ri] <= t:
             r = R.rows[ri]; ri += 1
             if not r.get("fighter") and not r.get("escape") and not r.get("missile"): route_want = float(r["want"])
-        if row["phase"] not in ("route", "attack", "strafe") or st["alt"] <= 100: continue
-        s = dict(alt=st["alt"], spd=st["spd"], hdg=st["hdg"]); p = (st["x"] / 32, st["y"] / 32)
-        flight, ac = fs.read_flight(db), fs.read_aircraft(db)
-        gs = GameState.from_dicts(st, flight, aircraft=ac)
+        if row["phase"] not in ("route", "attack", "strafe") or gs.alt_ft <= 100: continue
         rw = route_want if route_want is not None else float(row["want"])
-        inputs.append((t, gs, rw, (s, p, rw, ac, flight["opp"])))
-    rep = run_reaction(lambda t, it: old.step(it[0], it[1], t, it[2], it[3], it[4]), new, inputs)
-    assert rep.all_equal, rep.first_diff
+        inputs.append((t, gs, rw, None))
+    rep = run_react(new, inputs)
     assert "evade" in rep.states
-    print(f"fighter replay: {rep.ticks} snapshots all equal, states {rep.states}")
+    print(f"fighter replay: {rep.ticks} snapshots, states {rep.states}")
 
 
 # ----------------------------------------------------------------------------------------------------- missile watch
-def _missile_snaps(run):
-    G = product.missile_game()
-    saved = G.S
-    G.S = type("FixtureSettings", (), {"logs": H.FIX / "logs"})()
-    try: return G.load_run(run)
-    finally: G.S = saved
-
-
 @need_fix
-@pytest.mark.parametrize("run,mode", [("1792546698", "act"), ("1792715432", "act"), ("1792715432", "observe")])
-def test_missile_watch_replay(run, mode):
-    """MissileWatch on every snapshot (the harness's inputs: the row's want as the plan), old and new side by side.
-    BUDGET_S (a real-CPU-time cap on the candidate search) is lifted on both so the search is deterministic."""
-    MW = product.missile_watch()
-    R = H.Run.load(run); snaps = _missile_snaps(run)
+@pytest.mark.parametrize("run,mode,want_states", [
+    ("1792546698", "act", ["off", "watch", "off"]),
+    ("1792715432", "act", ["off", "watch", "evade", "watch", "evade", "watch", "off", "survival", "off"]),
+    ("1792715432", "observe", ["off", "watch", "evade", "watch", "evade", "watch", "off", "survival", "off"])])   # observe tracks the same states, it just never takes control
+def test_missile_watch_replay(monkeypatch, run, mode, want_states):
+    """MissileWatch on every snapshot of a recorded flight (the harness's inputs: the row's want as the plan). BUDGET_S (a
+    real-CPU-time cap on the candidate search) is lifted so the search is deterministic."""
+    from f19.cli.memlog_checks import load_run
+    R = H.Run.load(run); snaps = load_run(run, logs=H.FIX / "logs")
     gbyte, _ = H.theater_grid(R.mission.get("theater", "CE"))
-    saved = MW.MissileWatch.BUDGET_S, MissileWatch.BUDGET_S
-    MW.MissileWatch.BUDGET_S = MissileWatch.BUDGET_S = 1e9
-    try:
-        old, new = MW.MissileWatch(mode, gbyte), MissileWatch(mode, gbyte)
-        n = eq = 0; states = []
-        ctx = FlightContext(ManualClock(0.0))
-        for sn in snaps:
-            P = sn["player"]; row = R.row_at(sn["t"]); want = float(row["want"])
-            a, b = copy.deepcopy(sn), copy.deepcopy(sn)
-            ov, ev = old.step(dict(alt=P["alt"], spd=P["kt"], hdg=P["hdg"] * 360 / 65536), (P["x"], P["y"]), sn["t"], want, a)
-            ctx.clock.set(sn["t"]); ctx.want = want
-            gs = flat_state(P["alt"], P["kt"], P["hdg"] * 360 / 65536, P["x"], P["y"], missile_world=b)
-            cmd = new.step(gs, ctx)
-            same = (ov == cmd.to_overrides() and list(ev) == list(cmd.events) and
-                    (old.state, old.action, old.worst, old.gt, old.ratio) == (new.state, new.action, new.worst, new.gt, new.ratio))
-            n += 1; eq += same
-            assert same, (sn["t"], ov, cmd.to_overrides(), ev, cmd.events, old.state, new.state)
-            if not states or states[-1] != new.state: states.append(new.state)
-    finally:
-        MW.MissileWatch.BUDGET_S, MissileWatch.BUDGET_S = saved
-    assert eq == n and len(snaps) > 100
-    print(f"missile watch {run} {mode}: {n} snapshots all equal, states {states}")
+    monkeypatch.setattr(MissileWatch, "BUDGET_S", 1e9)
+    new = MissileWatch(mode, gbyte)
+    states = []
+    ctx = FlightContext(ManualClock(0.0))
+    for sn in snaps:
+        P = sn["player"]; row = R.row_at(sn["t"]); want = float(row["want"])
+        ctx.clock.set(sn["t"]); ctx.want = want
+        gs = flat_state(P["alt"], P["kt"], P["hdg"] * 360 / 65536, P["x"], P["y"], missile_world=copy.deepcopy(sn))
+        new.step(gs, ctx)
+        if not states or states[-1] != new.state: states.append(new.state)
+    assert len(snaps) > 100
+    print(f"missile watch {run} {mode}: {len(snaps)} snapshots, states {states}")
+    assert states == want_states
 
 
 def test_fighter_watch_descends_before_it_turns():

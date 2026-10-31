@@ -1,21 +1,17 @@
-"""WP-7b equivalence, phases on synthetic closed-loop worlds: OLD scripts/phases.py vs NEW f19.pilot.phases, same
-world each tick (the world answers the OLD keys; with equal keys both sides see the same next tick). Every tick must
-give the same key events (through the FakeControls adapter), the same override dict (Command.to_overrides minus the
-new-only fields), the same speed-hold target and the same log lines. Branch coverage is asserted per scenario."""
+"""Phases on synthetic closed-loop worlds (f19.pilot.phases): takeoff, landing, Maverick / photo attacks and the gun attack,
+each in scenarios that exercise its branches; the world answers the keys (through the FakeControls adapter) and the
+scenario's outcome is asserted (states reached, done, log lines). Until 2026-10-30 the same worlds also ran the old
+scripts/phases.py side by side and compared every tick; that oracle is retired."""
 import math
+import types
 
 import pytest
 
-from pilot_equiv import apply_keys, move, pos, product, projectile, run_phase, world
+from pilot_worlds import apply_keys, move, pos, projectile, run_new, world
 from f19.pilot.phases import Attack, GunAttack, Landing, Takeoff
 from f19.pilot.phases._common import K, game_dist
 
 T0, DT = 1_800_000_000.0, 0.25
-ph = product.phases()
-
-
-def old_step(o, db, w, t): return o.step(db, w["s"], w["f"], pos(w), t, w["ts"])
-
 
 def ticks(w, n, dt=DT, t0=T0):
     for i in range(n): yield t0 + i * dt, w
@@ -42,24 +38,13 @@ def takeoff_world(lose_first_brakes=False, stuck_throttle_ticks=0, accel_anyway=
 
 
 @pytest.mark.parametrize("cruise_ft,lose,stuck", [(450, False, 0), (300, True, 0), (450, False, 20)])
-def test_takeoff_equivalent(egame, cruise_ft, lose, stuck):
+def test_takeoff_flies(egame, cruise_ft, lose, stuck):
     w, after = takeoff_world(lose, stuck)
-    old, new = ph.Takeoff(ph.Throttle(), 190.0, cruise_ft), Takeoff(190.0, cruise_ft)
-    rep = run_phase(old, new, ticks(w, 600), old_step, extra=lambda b: (b.state, b.t0), after=after)
-    assert rep.all_equal, rep.first_diff
+    new = Takeoff(190.0, cruise_ft)
+    rep = run_new(new, ticks(w, 600), after=after)
     assert {"setup", "roll", "rotate", "climb"} <= set(rep.states) and new.done, rep.states
-    assert not rep.order_only
-    print(f"takeoff cruise {cruise_ft}: {rep.ticks} ticks, {rep.n_keys} key events, all equal")
+    print(f"takeoff cruise {cruise_ft}: {rep.ticks} ticks, {rep.n_keys} key events")
 
-
-def test_takeoff_max_power_at_rotation_order(egame):
-    """The one tick order the canonical Controls order can't give: a max-power re-press (roll state) in the tick the
-    plane reaches VR is followed by the first pitch tap. Old: [Shift+=, nose-up]; Controls: pitch first. Same keys."""
-    w, after = takeoff_world(stuck_throttle_ticks=99, accel_anyway=9.0)          # VR exactly 13 ticks (3.25 s > 3) after the first max
-    old, new = ph.Takeoff(ph.Throttle(), 190.0, 450), Takeoff(190.0, 450)
-    rep = run_phase(old, new, ticks(w, 120), old_step, extra=lambda b: (b.state, b.t0), after=after, allow_order=True)
-    assert rep.all_equal, rep.first_diff
-    assert len(rep.order_only) == 1 and rep.order_only[0][0] == [("scan", 0x0D, True, 0.2), ("tap", "down", 0.6)], rep.order_only
 
 
 def steer(w, ov, rate=1.5):
@@ -87,37 +72,33 @@ def landing_world(xt0=30.0, drift_low=0.0, float_ft=None, south=False):
         elif cap is not None and s["alt"] > cap: s["alt"] = max(0, int(s["alt"] - min(s["alt"] - cap, 9)))
         if float_ft is not None and s["alt"] < float_ft and ov.get("alt") != 500: s["alt"] = float_ft
         if 0 < s["alt"] < 3: s["alt"] = 0
-        tgt = old_thr[0].target
+        tgt = cell.target
         if tgt is not None: s["spd"] += max(-1.5, min(1.5, tgt - s["spd"]))
         if s["alt"] == 0 and f["throttle"] == 0: s["spd"] = max(0, s["spd"] - (8 if f["flags"] & 0x08 else 2))
         if s["alt"] < 100 and drift_low: w["s"]["x"] += int(drift_low * 32)
         f["box"] = int(s["alt"] == 0)
         move(w, DT)
-    old_thr = [None]
-    return w, after, old_thr
+    cell = types.SimpleNamespace(target=None)             # the speed hold's target, kept up to date by run_new
+    return w, after, cell
 
 
 @pytest.mark.parametrize("kind", ["land", "land_south", "go_around_xtrack", "go_around_long"])
-def test_landing_equivalent(egame, kind):
+def test_landing_flies(egame, kind):
     kw = dict(land={}, land_south=dict(south=True, xt0=-20.0), go_around_xtrack=dict(drift_low=3.0),
               go_around_long=dict(float_ft=60))[kind]
-    w, after, old_thr = landing_world(**kw)
+    w, after, cell = landing_world(**kw)
     fix = (FIX[0], 2 * BASE[1] - FIX[1]) if kw.get("south") else FIX
-    old, new = ph.Landing(BASE, fix, ph.Throttle()), Landing(BASE, fix)
-    new.IDLE_ALT, new.GA_PAST_UNITS, new.LOG_GO_AROUND = 15, new.AIM_UNITS, False   # 2026-10-30 changes off: parity with scripts/phases.py
-    new.BLEED_KT, new.HIGH_FT, new.IDLE_SINK_MAX, new.STEEP_VS = None, None, None, None
-    old_thr[0] = old.thr
-    rep = run_phase(old, new, ticks(w, 3000), old_step, extra=lambda b: (b.state, b.rwy, b.aim, getattr(b, "idled", False)), after=after)
-    assert rep.all_equal, rep.first_diff
+    new = Landing(BASE, fix)
+    rep = run_new(new, ticks(w, 3000), after=after, speed_cell=cell)
     want = {"land": ["approach", "final", "rollout", "stopped"], "land_south": ["approach", "final", "rollout", "stopped"],
             "go_around_xtrack": ["approach", "final", "go-around"], "go_around_long": ["approach", "final", "go-around"]}[kind]
     assert rep.states == want and new.done, rep.states
-    print(f"landing {kind}: {rep.ticks} ticks, {rep.n_keys} key events, all equal")
+    print(f"landing {kind}: {rep.ticks} ticks, {rep.n_keys} key events")
 
 
 def _landing_step(alt, km_past_base, xt=0.0, spd=140, flags=0x02):
     """One Landing.step on short final, northbound: km_past_base > 0 = that far past the base record (aim is 48 units short)."""
-    from pilot_equiv import gamestate
+    from pilot_worlds import gamestate
     from f19.core.types import Action, FlightContext
     from f19.core.clock import ManualClock
     w = world(x=BASE[0] + xt, y=BASE[1] - km_past_base * K, alt=alt, spd=spd, hdg=0.0, flags=flags, throttle=50)
@@ -145,7 +126,7 @@ def test_landing_goes_around_only_past_the_new_limit():
 
 def _approach(ld, alt, km_before_base, spd, t, clock, flags=0x02):
     """Step an existing Landing at km_before_base (km short of the base record), advancing the clock to t."""
-    from pilot_equiv import gamestate
+    from pilot_worlds import gamestate
     from f19.core.types import FlightContext
     w = world(x=BASE[0], y=BASE[1] + km_before_base * K, alt=alt, spd=spd, hdg=0.0, flags=flags, throttle=50)
     clock.set(t)
@@ -241,17 +222,14 @@ def attack_world(mode, start_km=30.0, opp=2, b_seq=(32, 2, 6, T_REC), trackcam=0
 
 def run_attack(mode, photo_km=None, **kw):
     w, after = attack_world(mode, **kw)
-    old = ph.Attack("primary", mode, TGT, T_REC, 14.0 if mode == "maverick" else None, photo_km, ph.Throttle())
     new = Attack("primary", mode, TGT, T_REC, 14.0 if mode == "maverick" else None, photo_km)
-    rep = run_phase(old, new, ticks(w, 4000), old_step, after=after,
-                    extra=lambda b: (b.state, b.b_presses, b.space_presses, b.f2_presses, b.bay_presses, b.flaps_set,
-                                     b.shots, b.cam_on, tuple(b.locks), b.slot, b.events0, round(b.next_ok, 6)))
-    return rep, old, new
+    rep = run_new(new, ticks(w, 4000), after=after)
+    return rep, new
 
 
 @pytest.mark.parametrize("case", ["maverick_reshoot", "maverick_no_fire", "maverick_too_close", "photo_elite",
                                   "photo_veteran_no_bay", "no_lock_abandon", "no_weapon", "overfly"])
-def test_attack_equivalent(egame, case):
+def test_attack_flies(egame, case):
     kw, mode = {}, "maverick"
     if case == "maverick_no_fire": kw = dict(enter_works=False)
     if case == "maverick_too_close": kw = dict(start_km=5.5, b_seq=(T_REC,))
@@ -260,8 +238,7 @@ def test_attack_equivalent(egame, case):
     if case == "no_lock_abandon": kw = dict(b_seq=(32, 2), start_km=8.0)
     if case == "no_weapon": kw = dict(loadout=[(17, 1), (0, 4), (0, 4), (0, 4)])
     if case == "overfly": mode = "overfly"
-    rep, old, new = run_attack(mode, **kw)
-    assert rep.all_equal, rep.first_diff
+    rep, new = run_attack(mode, **kw)
     assert new.done, (rep.states, new.log)
     want = {"maverick_reshoot": ["prep", "track", "fire", "close", "result", "fire", "close", "result", "away"],
             "maverick_no_fire": None,
@@ -299,34 +276,31 @@ def gun_world(start_km=10.0, rounds=650, kill_pass=2, repeat=True, alt=1500, low
         if st.get("pull"): f["pitch"] += 6.0 * DT * 2
         rounds, fs, ns = w["gun"]
         if st["held"] and (repeat or fresh): w["gun"] = (max(0, rounds - 10), fs, ns)
-        if old_ref[0].state == "check" and st["prev"] != "check": st["passes"] += 1
-        if old_ref[0].state == "check" and st["passes"] >= kill_pass:
+        if ref[0].state == "check" and st["prev"] != "check": st["passes"] += 1
+        if ref[0].state == "check" and st["passes"] >= kill_pass:
             w["targets"][G_REC] = (int(G_T[0]), int(G_T[1]), True)
-        st["prev"] = old_ref[0].state
+        st["prev"] = ref[0].state
         steer(w, ov, rate=2.0)
-        if old_ref[0].state not in ("dive", "pull"):
+        if ref[0].state not in ("dive", "pull"):
             f["pitch"] += max(-1.0, min(1.0, -f["pitch"]))
-            if old_ref[0].state != "runin": st["climb"] = True
+            if ref[0].state != "runin": st["climb"] = True
             tgt = ov.get("alt", 1500)
             if st.get("climb") or not low_first: s["alt"] += int(max(-20, min(20, tgt - s["alt"])))
         else:
             s["alt"] = max(0, int(s["alt"] + sink * 250 * 0.5144 * 3.281 * 2.5 * DT * math.sin(math.radians(f["pitch"]))))
         move(w, DT)
-    old_ref = [None]
-    return w, after, old_ref
+    ref = [None]
+    return w, after, ref
 
 
 @pytest.mark.parametrize("case", ["kill_on_pass2", "three_passes", "no_repeat", "not_set_up", "gun_empty"])
-def test_gun_attack_equivalent(egame, case):
+def test_gun_attack_flies(egame, case):
     kw = dict(kill_on_pass2={}, three_passes=dict(kill_pass=99), no_repeat=dict(repeat=False, kill_pass=1, sink=0.25),
               not_set_up=dict(low_first=True, kill_pass=1), gun_empty=dict(rounds=5))[case]
-    w, after, old_ref = gun_world(**kw)
-    old, new = ph.GunAttack(G_REC, G_T, ph.Throttle()), GunAttack(G_REC, G_T)
-    old_ref[0] = old
-    rep = run_phase(old, new, ticks(w, 6000), old_step, after=after,
-                    extra=lambda b: (b.state, b.passes, b.k, b.firing, b.pulse, b.bottom, b.fired, round(b.next_ok, 6),
-                                     round(b.cycle, 9)))
-    assert rep.all_equal, rep.first_diff
+    w, after, ref = gun_world(**kw)
+    new = GunAttack(G_REC, G_T)
+    ref[0] = new
+    rep = run_new(new, ticks(w, 6000), after=after)
     assert new.done, (rep.states, new.log)
     seen = set(rep.states)
     need = {"kill_on_pass2": {"runin", "dive", "pull", "check", "extend", "turn"}, "three_passes": {"dive", "pull", "check", "turn"},
@@ -362,7 +336,7 @@ def test_photo_retries_until_photographed(egame, monkeypatch):
     """2026-10-28 Prague: one frame was taken, the game did not count it, the bay shut and the primary was lost. Now Enter is
     pressed every FRAME_RETRY_S until the event log shows the target photographed, and the bay stays open meanwhile."""
     monkeypatch.setattr(Attack, "CONFIRM_PHOTO", True)
-    from pilot_equiv import FakeControls, FlightContext, ManualClock, gamestate, new_ov
+    from pilot_worlds import FakeControls, FlightContext, ManualClock, gamestate, new_ov
 
     def fly(photo_event):
         w, after = attack_world("photo", photo_event=photo_event, alt=250)
@@ -387,7 +361,7 @@ def test_photo_run_pulls_up_over_the_target(egame, monkeypatch, photo_event):
     CLEAR_KM the run ends photographed or not, the plane is told to climb CLEAR_UP_FT, and Attack keeps control until it is
     CLEAR_PAST_KM past the target."""
     monkeypatch.setattr(Attack, "CONFIRM_PHOTO", True); monkeypatch.setattr(Attack, "CLEAR_PASS", True)
-    from pilot_equiv import FakeControls, FlightContext, ManualClock, gamestate, new_ov
+    from pilot_worlds import FakeControls, FlightContext, ManualClock, gamestate, new_ov
 
     w, after = attack_world("photo", photo_event=photo_event, alt=250)
     a = Attack("primary", "photo", TGT, T_REC, None, 2.0)

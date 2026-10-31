@@ -381,8 +381,33 @@ def select_by_seed(emu, reader, seed, prediction, *, ds_phys=None, keys=SELECT_N
     log(f"seed {seed:#010x} written to ds:7A50")
     emu.tap(keys[0], hold); time.sleep(settle)
     if flag() != 1: raise RuntimeError("Select New Mission did not register (ds:CA6A still 0): was it highlighted?")
+    return _await_deal(emu, reader, ds_phys, flag, prediction, keys[1:], hold, settle, timeout, log)
+
+
+# After a flight the debrief ends on the duty roster with ds:CA6A already 1 (the state select_by_seed reaches after its
+# first Enter; seen live 2026-10-30). From there only the pilot and "Accept assignment" Enters are left.
+ROSTER_KEYS = ["enter", "enter"]
+
+
+def select_from_roster(emu, reader, seed, prediction, *, ds_phys=None, keys=ROSTER_KEYS, hold=0.1, settle=0.8,
+                       timeout=60.0, log=print):
+    """LIVE (sends keys and writes memory; only when the user asked for it), with the game on START's duty roster
+    (ds:CA6A = 1, a new mission pending): POKE the seed, Enter on the pilot, Enter on "Accept assignment", wait for
+    ds:CA6A -> 0, compare the briefing block. Returns (ok, Mission). NEVER Esc on the roster: it erases the pilot.
+    UNTESTED live: that a seed poked here (not at the options menu) is the one the generator uses; ok is False if not."""
+    if ds_phys is None:
+        ds_phys = reader.start_ds()
+        if ds_phys is None: raise RuntimeError("START is not running")
+    flag = lambda: emu.peek(ds_phys + NEW_FLAG, 1)[0]
+    if flag() != 1: raise RuntimeError("ds:CA6A is 0: the game is not on the roster with a new mission pending")
+    emu.poke(ds_phys + SEED, struct.pack("<I", seed))
+    log(f"seed {seed:#010x} written to ds:7A50")
+    return _await_deal(emu, reader, ds_phys, flag, prediction, keys, hold, settle, timeout, log)
+
+
+def _await_deal(emu, reader, ds_phys, flag, prediction, keys, hold, settle, timeout, log):
     end = time.time() + timeout
-    for k in keys[1:]:
+    for k in keys:
         emu.tap(k, hold); time.sleep(settle)
     while flag() != 0:
         if time.time() > end: raise RuntimeError(f"no new mission after {timeout:.0f} s (ds:CA6A stays 1)")

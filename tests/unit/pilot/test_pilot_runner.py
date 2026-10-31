@@ -12,7 +12,7 @@ import random
 
 import pytest
 
-from pilot_equiv import KeyLog, product
+from pilot_worlds import KeyLog, product
 import harness as H  # noqa: E402
 from f19.cli import fly
 from f19.core.clock import ManualClock

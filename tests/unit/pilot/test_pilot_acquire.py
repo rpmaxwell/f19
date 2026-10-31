@@ -4,7 +4,7 @@ selectable. Scenarios: a lost "/", the wanted record outside the cone, nearer th
 a game that ignores B (the 2026-10-30 station-1 case)."""
 import pytest
 
-from pilot_equiv import FlightContext, ManualClock
+from pilot_worlds import FlightContext, ManualClock
 from f19.core.types import Action, Attitude, GameState, Position, Systems, TrackcamView
 from f19.pilot.phases import Attack
 from f19.rules import trackcam as TC

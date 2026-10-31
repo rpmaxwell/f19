@@ -121,6 +121,19 @@ def test_select_by_seed_sequence(monkeypatch):
         G.select_by_seed(emu, FakeReader(), 1, want, ds_phys=ds, log=lambda *a: None)
 
 
+def test_select_from_roster_sequence(monkeypatch):
+    monkeypatch.setattr(G.time, "sleep", lambda s: None)
+    ds = 0x3D2A0
+    want = dict(primary=dict(mission=13, record=40), secondary=dict(mission=14, record=41), fuel_estimate=9000)
+    emu = FakeStart(ds, _block(13, 40, 14, 41)); emu.mem[ds + G.NEW_FLAG] = 1; emu.enters = 1   # the roster: flag 1
+    ok, m = G.select_from_roster(emu, FakeReader(), 0xDEADBEEF, want, ds_phys=ds, log=lambda *a: None)
+    assert ok and m == "MISSION" and emu.pokes == [(ds + G.SEED, struct.pack("<I", 0xDEADBEEF))] and emu.enters == 3
+    emu = FakeStart(ds, b"")                                                   # flag 0: not on the roster
+    with pytest.raises(RuntimeError, match="not on the roster"):
+        G.select_from_roster(emu, FakeReader(), 1, want, ds_phys=ds)
+    assert emu.enters == 0 and emu.pokes == []                                 # nothing sent or written
+
+
 NC_IMAGE = S.logs / "plan" / "northcape" / "briefing_mem.bin"
 
 

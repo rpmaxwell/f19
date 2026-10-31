@@ -1,4 +1,4 @@
-"""`radar_game.py check` and `missile_game.py check` as pytest.
+"""`python -m f19.cli.memlog_checks radar` and `missiles` (the old `radar_game.py check` and `missile_game.py check`) as pytest.
 
 Fast tests run the checks on the replay fixtures (fixtures/replay/logs/memlog: 3 trimmed runs); the slow ones on the whole
 memlog corpus under F19_DATA/logs/memlog, as the command lines do. Expected counts are what the baseline code printed on
@@ -6,11 +6,11 @@ memlog corpus under F19_DATA/logs/memlog, as the command lines do. Expected coun
 miss by design of the snapshots), so the tests pin the counts.
 """
 import re
-import types
 
 import pytest
 
-import product
+from f19.cli import memlog_checks as MC
+from f19.rules import radar as RG
 from conftest import FIXTURES, S, need
 
 REPLAY = FIXTURES / "replay"
@@ -18,8 +18,7 @@ FIX_RUNS = ["1792546698", "1792609731", "1792715432"]
 
 
 def _radar_counts(capsys, dirs):
-    rg = product.radar_game()
-    rg._check([str(d) for d in dirs])
+    MC.radar_check([str(d) for d in dirs])
     out = capsys.readouterr().out
     m = re.search(r"EMV within \+-1: (\d+)/(\d+)\s+pink pulses predicted pink: (\d+)/(\d+)\s+duty flag: (\d+)/(\d+)", out)
     assert m, out
@@ -27,7 +26,7 @@ def _radar_counts(capsys, dirs):
 
 
 def test_site_return_np_matches_scalar(egame, capsys):
-    assert product.radar_game()._check_np(20000)
+    assert RG.check_np(20000)
 
 
 def test_radar_memlog_check_fixtures(egame, capsys):
@@ -39,14 +38,8 @@ def test_radar_memlog_check_fixtures(egame, capsys):
 
 
 def _missile(capsys, logs, runs):
-    G = product.missile_game()
-    saved = G.S
-    G.S = types.SimpleNamespace(logs=logs)
-    try:
-        all_pass = G.check(runs)
-        res = G.outcomes(runs)
-    finally:
-        G.S = saved
+    all_pass = MC.check(runs, logs=logs)
+    res = MC.outcomes(runs, logs=logs)
     out = capsys.readouterr().out
     groups = {(n, int(o)): (int(a), int(b)) for n, o, a, b in re.findall(r"^\s+(\S+)\s+opp (\d): (\d+)/(\d+) pass", out, re.M)}
     ok = sum((p == "hit") == (r == "hit") for *_, p, r, _c in res)
@@ -89,7 +82,7 @@ def test_missile_check_all(egame, capsys):
 
 
 # whole-corpus numbers (baseline code, 2026-10-25, logs/memlog as of WP-0)
-# (EMV ok, n, pink ok, n, duty ok, n); 24 EMV misses are in older runs (radar_game.py check: ~17 s)
+# (EMV ok, n, pink ok, n, duty ok, n); 24 EMV misses are in older runs (memlog_checks radar: ~17 s)
 ALL_RADAR = (59625, 59649, 2313, 2433, 1145395, 1169997)
 ALL_MISSILE_PAIRS = (629, 631)          # R1 gate pass / pairs (missile_watch.py's docstring quotes the same 629/631)
 ALL_MISSILE_OUTCOMES = (64, 64)
