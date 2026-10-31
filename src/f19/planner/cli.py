@@ -1,6 +1,6 @@
 """The planner's file side: plan dirs in, route.json / report.txt / route.png / terrain.npz out.
 
-  python analysis/planner <plan_dir> [--spec plan.json]          main(): plan.json -> the files (plan.py's docstring)
+  python -m f19.planner <plan_dir> [--spec plan.json]            main(): plan.json -> the files (plan.py's docstring)
   python -m f19.planner.new_plan --extra-fuel 1 ...         new_plan(): read the briefing, write plan.json, plan
 
 Everything else (planning, the report text, the picture, the route.json dict) is in memory: planner.api / report.
@@ -15,7 +15,7 @@ from f19.core.settings import settings as S
 from .api import plan_mission, resolve_takeoff_heading
 from .planner import Planner
 
-ROOT = Path(__file__).resolve().parents[3]       # the repo (scripts/read_mission.py, analysis/planner)
+ROOT = Path(__file__).resolve().parents[3]       # the repo
 
 
 def load_mission(spec, plan_dir):
@@ -68,7 +68,7 @@ NEW_PLAN_DOC = """Plan the mission on the briefing screen in one step: read it f
 Writes logs/plan/<theater>_<primary place>_<MMDD_HHMM>/ (plan.json, mission_mem.json, route.json, report.txt,
 route.png) and prints the report and the nav command. --extra-fuel is the number of Extra Fuel tanks you'll load
 (0-3): pick it after the briefing and the ordnance screen; nav transfers one whenever fuel drops below 500 lb.
-Change it later by editing "extra_fuel" in plan.json and running `python analysis/planner <dir>` again.
+Change it later by editing "extra_fuel" in plan.json and running `python -m f19.planner <dir>` again.
 """
 
 
@@ -100,7 +100,7 @@ def new_plan(argv=None):
     if a.mission_file:
         M = json.load(open(a.mission_file))
     else:
-        r = subprocess.run([sys.executable, str(ROOT / "scripts/read_mission.py"), "--theater", a.theater, "--out", str(tmp)])
+        r = subprocess.run([sys.executable, "-m", "f19.cli.read_mission", "--theater", a.theater, "--out", str(tmp)])
         if r.returncode: sys.exit("could not read the mission (is F-19 on the briefing screen, and no other script "
                                   "holding the automation port? `lsof -nP -iTCP:6000`)")
         M = json.load(open(tmp))
@@ -123,9 +123,9 @@ def new_plan(argv=None):
     json.dump(spec, open(D / "plan.json", "w"), indent=1)
     print(f"mission: {', '.join(f'{t['role']} {t.get('task', '?')} {t['object']} at {t['place']}' for t in M['targets'])}; "
           f"{M['takeoff']['place']} -> {M['landing']['place']}; plan in {D}", flush=True)
-    r = subprocess.run([sys.executable, str(ROOT / "analysis/planner"), str(D)])
+    r = subprocess.run([sys.executable, "-m", "f19.planner", str(D)])
     route = D / "route.json"
     if r.returncode == 0 and route.exists():
         rel = route.resolve().relative_to(ROOT) if route.resolve().is_relative_to(ROOT) else route.resolve()
-        print(f"\nfly it:\n  python3 scripts/nav.py --route {rel} --auto --hdg --memlog")
+        print(f"\nfly it:\n  uv run python -m f19.cli.fly --route {rel} --auto --hdg --director --memlog")
     sys.exit(r.returncode)

@@ -1,12 +1,12 @@
 """The mission planner: a plan spec + the mission in memory -> the chosen route, deterministically.
 
   Planner(spec, mission).run() -> (best, results)      (planner.api.plan_mission wraps it; cli.py reads / writes files)
-  python analysis/planner <plan_dir> [--spec plan.json]
+  python -m f19.planner <plan_dir> [--spec plan.json]
 
 <plan_dir>/plan.json:
   {
     "theater": "CE",
-    "mission": "mission_mem.json",            # scripts/read_mission.py output (default)
+    "mission": "mission_mem.json",            # python -m f19.cli.read_mission output (default)
     "takeoff": "Gutersloh" | {"x": .., "y": .., "label": "Carrier", "carrier": true},
     "takeoff_heading": 0 | 180 | "both",       # default: what the game will use (game_takeoff_heading: the theater
                                                # decides; carriers +5.6). "both" plans N and S, for experiments only

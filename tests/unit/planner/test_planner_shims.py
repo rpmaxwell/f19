@@ -42,3 +42,27 @@ def test_entry_points_run(args):
 def test_checks_script(egame):
     p = subprocess.run([sys.executable, "-m", "f19.planner.checks"], cwd=ROOT, capture_output=True, text=True)
     assert p.returncode == 0 and "all checks passed" in p.stdout, p.stdout[-2000:] + p.stderr[-2000:]
+
+
+def test_read_mission_command_reads_a_saved_image(tmp_path, egame):
+    """python -m f19.cli.read_mission (the command new_plan runs; was scripts/read_mission.py) on a saved START image."""
+    img = product.settings().logs / "tmp" / "briefing_mem.bin"
+    if not img.exists(): pytest.skip("no START briefing image in F19_DATA/logs/tmp")
+    out = tmp_path / "m.json"
+    p = subprocess.run([sys.executable, "-m", "f19.cli.read_mission", "--snapshot", str(img), "--out", str(out)], cwd=ROOT, capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr[-2000:]
+    m = json.loads(out.read_text())
+    assert m["theater"] == "CE" and [t["role"] for t in m["targets"]][:2] == ["primary", "secondary"] and m["radars"] and m["takeoff"]["place"]
+
+
+@pytest.mark.slow
+def test_new_plan_end_to_end_from_a_mission_file(tmp_path, egame):
+    """new_plan --mission-file (no game): writes plan.json, runs the planner as a subprocess, writes route.json with the acquisition windows."""
+    from conftest import FIXTURES, need
+    d = need(FIXTURES / "plans" / "ce_kolobrzeg_1022_2250", "the kolobrzeg golden plan")
+    out = tmp_path / "plan"
+    p = subprocess.run([sys.executable, "-m", "f19.planner.new_plan", "--mission-file", str(d / "mission_mem.json"), "--extra-fuel", "2", "--out", str(out)],
+                       cwd=ROOT, capture_output=True, text=True)
+    assert p.returncode == 0, p.stdout[-1500:] + p.stderr[-1500:]
+    route = json.loads((out / "route.json").read_text())
+    assert any(pt.get("acq") for pt in route["points"]) and "fly it:" in p.stdout and "-m f19.cli.fly" in p.stdout

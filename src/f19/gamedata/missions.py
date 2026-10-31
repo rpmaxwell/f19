@@ -4,7 +4,7 @@ Sources (all static game data, no emulator needed except for the table dump):
   - BRIEFING.TXT: MicroProse LZW (byte 0 = max code width 11, codes LSB-first from 9 bits,
     first free code 257, dictionary reset when full), 56 NUL-separated texts; text n = mission n.
   - logs/theater/missions.json: START's mission table (ds:4B0C), dumped by
-    `scripts/read_mission.py --missions logs/theater/missions.json` during a briefing.
+    `python -m f19.cli.read_mission --missions logs/theater/missions.json` during a briefing.
   - each .WLD: 100-byte category table (one byte per name slot) just before the 256-byte territory
     grid, which sits just before the name list (CE.WLD 0x756). START copies it to ds:C162.
 A mission can occur in theater t when bit t of its theater_mask is set (0 Libya, 1 Persian Gulf,
