@@ -10,7 +10,8 @@ def _full(path):
     im = Image.open(path).convert("RGB")
     return im.resize((1280, 856), Image.NEAREST) if im.width == 640 else im
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
 WIN = sys.argv[1]
 OUT = Path(__file__).resolve().parent.parent / "logs" / "wp_rec" / str(int(time.time())); OUT.mkdir(parents=True)
 STOP = OUT.parent / "STOP"; STOP.unlink(missing_ok=True)

@@ -1,4 +1,4 @@
-"""SUPERSEDED by analysis/planner (python analysis/planner <plan_dir>); kept to reproduce old plans.
+"""SUPERSEDED by src/f19/planner (python -m f19.planner <plan_dir>); kept to reproduce old plans.
 
 Radar-tactics test route: splice controlled test legs into a planned route.
 

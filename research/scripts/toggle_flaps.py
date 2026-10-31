@@ -21,7 +21,10 @@ Usage: python3 scripts/toggle_flaps.py [host] [port]
 import sys
 import time
 
-from dosbox_automation import Dosbox, DEFAULT_HOST, DEFAULT_PORT
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
+from f19.core.settings import settings as _S
+DEFAULT_HOST, DEFAULT_PORT = _S.host, _S.port
 
 FLAPS_KEY = "9"
 REPEATS = 20

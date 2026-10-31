@@ -5,7 +5,8 @@ import subprocess, sys, time
 from pathlib import Path
 from PIL import Image, ImageChops
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
 
 WIN_ID = sys.argv[1]
 GRABS = 8

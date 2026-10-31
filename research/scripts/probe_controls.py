@@ -14,9 +14,11 @@ results go to logs/probe/<test>_<time>.json. Addresses are FINDINGS.md "old phys
 import json, struct, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dosbox_automation import Dosbox
-from f19_state import read_state, read_flight, read_target, find_offset, FLAGS, LOCKED
-from phases import MINUS, EQUALS, TAP
+import sys as _sys; from pathlib import Path as _Path; _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))   # the f19 package
+from f19.emulator import Emulator as Dosbox
+from f19.memory.reader import read_state, read_flight, read_target, find_offset
+from f19.memory.addresses import FLAGS, LOCKED
+from f19.pilot.controls import MINUS, EQUALS, TAP
 
 ROOT = Path(__file__).resolve().parent.parent
 LO, HI = 0x3C000, 0x48000
