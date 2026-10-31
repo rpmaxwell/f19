@@ -47,7 +47,7 @@ Correct old text with a dated "CORRECTION" / "Superseded" note rather than silen
 - **The automation port serves one client at a time.** A second connection (a probe, the HUD, nav) fails or
   steals the first.
 - **No screenshots.** Screen state comes from game memory, not from the display.
-- **Game time, not wall time.** Timers use the `Clock` (frame counter ds:5520).
+- **Time:** pilot timers and gains are in real seconds, tuned live at the game's normal speed (2.46 game s per real s, `core.units.GAME_PER_WALL`) and divided by the time byte `ts`, which is relative to that speed. Do not feed the measured game/real ratio in as `ts`. The `Clock` (frame counter ds:5520) measures and flags a different emulator speed; the planner works in game time.
 
 ## Architecture
 

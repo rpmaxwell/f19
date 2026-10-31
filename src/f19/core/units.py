@@ -25,6 +25,13 @@ GROUND_PER_KT = 0.788        # ground speed / indicated airspeed (planner/world.
 GROUND_KMH_PER_KT = KT_KMH * GROUND_PER_KT     # = planner/world.py KT_KMH (map km per game hour per indicated kt)
 FT_PER_M = 3.28084
 CLOCK_TICK_S = 2             # game s per clock tick (ds:6630)
+# Game seconds per real second at time_mult 1 on the F-19 emulator setup (DOSBox-X, f19-dosbox.conf). MEASURED, 2026-10-30, from the memlogs of
+# 20 flights (game clock ds:6630 against snapshot wall time, 60 s windows): median 2.46 (p10 2.20, p90 2.74, 8010 windows). The time-multiplier byte
+# (ds:410AA, `ts` / GameState.time_mult) is RELATIVE to this: byte 2 (TIME x2) measured 4.98 = 2.02 x 2.46 (138 windows). So `ts` = 1 is right,
+# not a bug: every loop gain, hold time and CLEAR_S-style constant in f19.pilot was tuned live in real seconds at this speed and divides by `ts`.
+# Code that needs an ABSOLUTE rate (a speed in km per real second before a track exists) uses GAME_PER_WALL * ts. A machine or config that
+# runs the emulator at another speed shifts every tuned constant by the same factor: the Runner's clock line flags it.
+GAME_PER_WALL = 2.46
 
 ANGLE_FULL = 65536
 DEG_PER_ANGLE16 = 360 / ANGLE_FULL

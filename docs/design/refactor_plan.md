@@ -580,3 +580,19 @@ The table above listed what blocked removing each legacy file. All of it is gone
   one run, all around an attack and an overlapping fighter evasion).
 - **Mistake on the way:** `00d4271` was committed with 8 failing tests (nav_tui still imported `planner.score`); fixed in `a410cbf` before anything else was built on it.
 - **Still open:** research scripts still import the deleted flat modules (they may break, by design); the `ts` / game-time question; `desired_roster_state.csv`.
+
+## ts / game time: resolved (2026-10-30) - CORRECTION to "ts reads 1 while the game runs 2.4-2.6x"
+The sections above (2 "Time", 7 "Known bugs", 4.3, WP-7d, "Cutover progress") treat `ts` = 1 against a measured ~2.5x as a bug and propose moving the loops
+to game seconds. **That was a misreading.** Measured from the memlogs of 20 flights (docs/game/memory-map.md "Game seconds per real second"): at time byte 1 the
+game runs 2.46 game s per real s (median of 8010 windows, p10-p90 2.20-2.74), at byte 2 it runs 4.98. The byte is relative acceleration; 2.46 is the emulator's
+nominal speed. Every loop gain, hold time and timer was tuned live in real seconds at that speed, so feeding the measured ratio in as `ts` would have changed all
+of them by 2.46x (it was never done, and must not be).
+- **Decision:** leave the loops and behaviours on real seconds and the time byte. (The "0.91x" I quoted for the 10-30 landing runs was the first 1.5 s reading of a
+  run, not the rate; the run's real rate was ~2.4.)
+- **Changed:** `core.units.GAME_PER_WALL = 2.46` (documented, with the evidence); `TerrainEscape` assumed speed (before its own track exists) now x `ts` (it was a
+  constant 2.5 and wrong by 2x under TIME x2); the Runner's `clock:` line shows the speed relative to the tuned one (`time byte 1 = 1.02 of the tuned speed`) and
+  says OUTSIDE when it is under 0.8 or over 1.25 (a slower or faster emulator shifts every tuned constant by that factor). CLAUDE.md and the first-flight
+  checklist say the same. Tests: `test_terrain_escape_assumed_speed_scales_with_the_time_byte`, `test_clock_line_*`, `test_game_per_wall_is_the_measured_nominal_rate`.
+- **Not done / untested:** time byte 3+ (never flown); other machines or DOSBox `cycles` settings; whether to scale by the measured ratio to follow
+  scene-load swings of +-10 % inside a flight (no evidence it matters; the flights flew fine).
+- WP-7d's "switch to the game Clock" is therefore closed as not needed; FrameClock stays as a measurement.

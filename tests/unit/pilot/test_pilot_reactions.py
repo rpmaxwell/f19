@@ -143,6 +143,15 @@ def test_terrain_escape_replay(monkeypatch, margin):
     print(f"terrain escape replay (margin {margin or 100}): {rep.ticks} rows, states {rep.states[:8]}...")
 
 
+def test_terrain_escape_assumed_speed_scales_with_the_time_byte():
+    """Before the plane's own track gives a speed, the estimate is the game physics at GAME_PER_WALL x ts: under TIME x2 the game covers twice the
+    ground per real second (measured 2026-10-30: byte 2 = 4.98 game s per real s = 2.02 x the 2.46 of byte 1)."""
+    te = TerrainEscape(lambda *a: None)
+    v1, v2 = te._km_s(190, (0.0, 0.0), 0.0), TerrainEscape(lambda *a: None)._km_s(190, (0.0, 0.0), 0.0, ts=2.0)
+    assert v2 == pytest.approx(2 * v1)
+    assert v1 == pytest.approx(190 * 0.788 * 1.852 / 3600 * 2.46)           # km per real s at nominal speed
+
+
 # ----------------------------------------------------------------------------------------------------- fighter watch
 def _aircraft_state(s, p, aircraft, opp):
     return GameState.from_dicts(dict(alt=s["alt"], spd=s["spd"], hdg=s["hdg"], x=int(round(p[0] * 32)), y=int(round(p[1] * 32))),

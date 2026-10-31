@@ -1,6 +1,7 @@
-"""Game-time clocks (refactor plan 4.3). now() returns game seconds. The real source will be the frame counter
-(ds:5520, as MissileWatch measures it; WP-4); until then WallClock scales wall time by a ratio (the game ran
-~2.45x real time in the memlogs, 10-90 % 2.0-2.9; MissileWatch docstring)."""
+"""Game-time clocks (refactor plan 4.3). now() returns game seconds. FrameClock measures them from the frame counter (ds:5520, as
+MissileWatch does) and nothing flies on it; WallClock scales wall time by a ratio. The game runs ~2.46 game s per real s at time byte 1
+(core.units.GAME_PER_WALL, measured 2026-10-30 over 20 flights) and the byte is RELATIVE to that, so the pilot's `ts` needs no
+replacement by the measured ratio: the clocks exist to measure and to flag a different emulator speed."""
 import time
 from typing import Protocol, runtime_checkable
 

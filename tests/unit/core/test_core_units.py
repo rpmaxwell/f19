@@ -20,6 +20,10 @@ def test_constants_match_old_copies():
     assert u.CELL_UNITS == 2048 and u.CELL_KM == 32 and u.MAP_UNITS == 32768
 
 
+def test_game_per_wall_is_the_measured_nominal_rate():
+    assert u.GAME_PER_WALL == 2.46              # median of 8010 windows over 20 flights at time byte 1 (core.units); byte 2 gave 4.98
+
+
 def test_cells():
     for _ in range(2000):
         x, y = R.uniform(-3000, 36000), R.uniform(-3000, 36000)

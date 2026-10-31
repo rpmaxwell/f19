@@ -217,3 +217,33 @@ def test_memlog_snapshots(egame):
     assert len(snaps) == 1 and len(snaps[0].data) == 0xC000 and snaps[0].t == round((5.0 + 8.0) / 2, 2)
     lo = ml.layout.windows[0][1]
     assert snaps[0].data[:256] == rr.emu.peek(lo, 256)
+
+
+def _clock_runner(tm, rate):
+    """A Runner with only what _measure_clock touches: frame counter advancing `rate` game s per real s (fs 8: 0.25 game s a frame)."""
+    from f19.core.clock import FrameClock
+    from f19.pilot.runner import Runner
+    r = Runner.__new__(Runner)
+    r.game_clock, r._gc_log, r.phase_log = FrameClock(), 0.0, []
+    st = {"wall": 0.0, "frame": 1000}
+    class FakeReads:
+        def frame_fs(self_): return st["frame"], 8
+        def time_mult(self_): return tm
+    r.reads = FakeReads()
+    out = []
+    for i in range(12):                                         # 12 real seconds
+        st["wall"] = float(i); st["frame"] = 1000 + int(round(i * rate * 4))
+        r._measure_clock(st["wall"], out)
+    return out
+
+
+def test_clock_line_reports_the_speed_relative_to_the_tuned_one():
+    out = _clock_runner(1.0, 2.5)                               # 10 frames a real second (whole frames), 2.5 vs the tuned 2.46
+    assert len(out) == 1 and "time byte 1 = 1.02 of the tuned speed" in out[0].text and "OUTSIDE" not in out[0].text
+    out = _clock_runner(2.0, 5.0)                               # TIME x2: twice the rate, the byte says 2: still the tuned speed
+    assert "time byte 2 = 1.02 of the tuned speed" in out[0].text and "OUTSIDE" not in out[0].text
+
+
+def test_clock_line_flags_a_different_emulator_speed():
+    out = _clock_runner(1.0, 1.5)                               # a slower machine: 0.61 of the speed the loops were tuned at
+    assert "0.61 of the tuned speed" in out[0].text and "OUTSIDE 0.8-1.25" in out[0].text

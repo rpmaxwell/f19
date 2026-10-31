@@ -496,6 +496,12 @@ Decoded from the EGAME disassembly for the flight logger. ds offsets; phys = 0x3
   ds:4EFC frames; ds:5520 = frame counter. ds:4EFC (4 by default) is re-derived from the measured frame rate (0x4599) and
   halved by time acceleration (0xd590, ds:553A). A debug key adds/subtracts 0x3C (2 min) at 0xdc82. memlog: event records
   every 32 ticks carry exactly this clock.
+- **Game seconds per real second (measured 2026-10-30, 20 flights, 22 memlog runs 10-27 to 10-30; method: game clock ds:6630 against the snapshot wall
+  times, 60 s windows; live flights, F-19 under DOSBox-X with f19-dosbox.conf, Veteran/Elite, CE).** The time-multiplier byte (old phys 0x410AA, `ts`) is
+  RELATIVE: at byte 1 the median is **2.46** game s per real s (p10 2.20, p90 2.74, 8010 windows; the whole-flight medians of 18 flights lie in
+  2.35-2.63); at byte 2 (TIME x2) it is **4.98** (138 windows) = 2.02 x 2.46. Within a flight single windows range ~1.6-2.85 (scene load); values near 0
+  are pauses and save-state loads. Untested: byte 3+ (no flight used it), other machines or `cycles` settings (the rate is the emulator's, not the
+  game's). The first clock reading of a run (the first 1.5-6 s) is noisy (0.9-2.6 seen) and says nothing about the rate.
 
 **Fuel** (memlog: starts ~10000, -64 lb per 32 ticks at 50 % throttle = the formula)
 - **ds:4ED0 u16 fuel, lb** (main tanks). Set to 10000 at mission start (0x3cce). Burn (0x268c): every 2 x ds:4EFC frames

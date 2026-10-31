@@ -35,7 +35,7 @@ import numpy as np
 from f19.core.geometry import dist, wrap_deg as wrap
 from f19.core.clock import FrameClock
 from f19.core.types import Action, Frame
-from f19.core.units import K
+from f19.core.units import GAME_PER_WALL, K
 from f19.memory import reader as R
 from f19.pilot.eject import LevelOut
 from f19.rules import radar as rg
@@ -263,13 +263,25 @@ class Runner:
     def _event(self, now, text, events):
         self.phase_log.append(f"{now:.0f} {text}"); events.append(Event(now, text))
 
+    SPEED_BAND = (0.8, 1.25)                           # measured / tuned game speed outside this is flagged in the clock line
+
     def _measure_clock(self, now, events):
+        """FrameClock: game time and the game/real ratio from the frame counter (measure-only). Every 120 s a line says it, relative to
+        the speed everything was tuned at (core.units.GAME_PER_WALL x the time byte); outside SPEED_BAND the line says so, because every loop
+        gain and hold time in this package is in real seconds at that speed."""
         try: frame, fs = self.reads.frame_fs()
         except Exception: return                       # a replay source or a failed read: no measurement this tick
         self.game_clock.feed(frame, fs, now)
         r = self.game_clock.ratio
-        if r is not None and now >= self._gc_log:
-            self._gc_log = now + 120.0; self._event(now, f"clock: game {r:.2f}x real (game t {self.game_clock.gt:.0f} s)", events)
+        if r is None or now < self._gc_log: return
+        self._gc_log = now + 120.0
+        try: tm = self.reads.time_mult()
+        except Exception: tm = 1.0
+        rel = r / (GAME_PER_WALL * tm)
+        text = f"clock: game {r:.2f}x real, time byte {tm:g} = {rel:.2f} of the tuned speed (game t {self.game_clock.gt:.0f} s)"
+        if not self.SPEED_BAND[0] <= rel <= self.SPEED_BAND[1]:
+            text += f" - OUTSIDE {self.SPEED_BAND[0]}-{self.SPEED_BAND[1]}: the loops' timings are off by this factor"
+        self._event(now, text, events)
 
     def tick(self, now=None):
         now = self.clock.now() if now is None else now
