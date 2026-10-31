@@ -35,17 +35,23 @@ def _m(x):
     return x
 
 
+# run -> (digest of the old missile_game.parse over every snapshot, snapshots), recorded 2026-10-30 before that module was retired
+GOLD_PARSE = {"1792546698": ("4d18dae4673de0c3", 313), "1792609731": ("7c75c400058eaac3", 404), "1792715432": ("7234b38343c2da21", 787)}
+
+
 @need_fix
 @pytest.mark.parametrize("run_id", list(RUNS))
-def test_parse_missile_world_matches_missile_game(run_id, egame):
-    G = product.missile_game()
+def test_parse_missile_world_matches_the_old_parse(run_id, egame):
+    import hashlib
+    import json
     rr = ReplayReader(H.FIX / "logs" / "memlog" / run_id)
-    n = 0
+    h, n = hashlib.sha256(), 0
     for i in range(len(rr)):
         rr.seek_index(i)
         get = MR.missile_world_memory(rr.emu, full=bool(i % 2))
-        assert _m(parse_missile_world(get)) == _m(G.parse(get))
+        h.update(json.dumps(_m(parse_missile_world(get)), sort_keys=True, default=repr).encode())
         n += 1
+    assert (h.hexdigest()[:16], n) == GOLD_PARSE[run_id]
     assert n > 200
 
 

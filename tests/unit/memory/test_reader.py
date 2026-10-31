@@ -1,18 +1,17 @@
-"""f19.memory.reader against the pre-WP-4 f19_state (frozen copy), on the replay fixture memlogs.
-
-Both read the same snapshot: the legacy readers through a SnapDB-style fake (the old `_send`/`_recv_line` line API, as
-tests/replay/harness.py and nav_tui use), the new ones through the same fake and through ReplayReader (peek_many).
-"""
+"""f19.memory.reader on the replay fixture memlogs. The expected values are digests of what the pre-WP-4 f19_state returned
+on the same snapshots (recorded 2026-10-30 from the frozen copy before it was retired): every dict reader, the time multiplier
+and the frame counter on every 25th snapshot, and the GameState that GameState.from_dicts built from those dicts on every
+40th. The new readers run through a SnapDB-style fake (the old `_send`/`_recv_line` line API) and through ReplayReader
+(peek_many)."""
 import dataclasses
+import hashlib
 import json
 import struct
-import sys
 from pathlib import Path
 
 import pytest
 
 import product
-import f19_state_legacy as L
 from f19.core.types import GameState, ThreatKind
 from f19.memory import addresses as A
 from f19.memory import reader as R
@@ -53,61 +52,49 @@ def _snaps(run, every=25):
     return w, files[::every]
 
 
+# run -> (digest of the dict readers, digest of the GameState, snapshots in the second), from the retired f19_state
+GOLD = {"1792546698": ("a5307b1c777f7406", "98f0475c70cf7d55", 8),
+        "1792609731": ("d11b0b3c0bb9fbf8", "979af32ba6cf7f72", 11),
+        "1792715432": ("546c1e294ba1f7a0", "3f2e80ab11b179f6", 20)}
+
+
 @need
 @pytest.mark.parametrize("run", RUNS, ids=lambda p: p.name)
-def test_dict_readers_match_legacy(run):
+def test_dict_readers_match_the_old_ones(run):
     w, files = _snaps(run)
-    windows = [tuple(x) for x in w["windows"]]
-    old, new = LineSnapDB(windows), LineSnapDB(windows)
+    new = LineSnapDB([tuple(x) for x in w["windows"]])
     rr = ReplayReader(run)
+    h = hashlib.sha256()
     for f in files:
-        raw = f.read_bytes(); old.load(raw); new.load(raw); rr.emu.load(raw)
-        for d, cache in ((old, L._offset), (new, R._offset)): cache[id(d)] = w["offset"]
-        L._events.pop(id(old), None); R._events.pop(id(new), None); R._events.pop(id(rr.emu), None)
-        for name in READERS:
-            want = getattr(L, name)(old)
-            assert getattr(R, name)(new) == want, (f.name, name)
-            assert getattr(R, name)(rr.emu) == want, (f.name, name, "peek_many path")
-        assert R.read_time_mult(rr.emu) == (lambda m: float(m[0]) if m and 1 <= m[0] <= 8 else 1.0)(
-            L._peek(old, 0x410AA + w["offset"], 1))
-        assert R.read_frame(rr.emu) == struct.unpack("<H", L._peek(old, L.DS + 0x5520 + w["offset"], 2))[0]
-        # MissileWatch's accessor: the same bytes for every address missile_game.parse may ask for
-        g_old, g_new = _legacy_world_get(old), R.missile_world_memory(rr.emu)
-        for a, n in A.MISSILE_WORLD_DS + [(0x80AA, 16 * 40), (0x8854, 0x24 * 20), (0x85FC, 256), (0x9000, 4)]:
-            assert g_new(a, n) == g_old(a, n), (f.name, hex(a))
-
-
-def _legacy_world_get(db):
-    """The `get` that the legacy read_missile_world hands to missile_game.parse (captured with a stub parse)."""
-    import types
-    got = {}
-    stub = types.SimpleNamespace(parse=lambda get: got.setdefault("get", get), TARGETS=0x80AA, SIMOBJ=0x8854, GRID=0x85FC)
-    real = sys.modules.get("missile_game")
-    sys.modules["missile_game"] = stub
-    try: L.read_missile_world(db)
-    finally:
-        if real is not None: sys.modules["missile_game"] = real
-        else: sys.modules.pop("missile_game")
-    return got["get"]
+        raw = f.read_bytes(); new.load(raw); rr.emu.load(raw)
+        R._offset[id(new)] = w["offset"]
+        R._events.pop(id(new), None); R._events.pop(id(rr.emu), None)
+        for name in READERS: h.update(repr((f.name, name, getattr(R, name)(new))).encode())
+        h.update(repr(R._peek(new, 0x410AA + w["offset"], 1)).encode())
+        h.update(repr(struct.unpack("<H", R._peek(new, A.DS + 0x5520 + w["offset"], 2))[0]).encode())
+        for name in READERS: assert getattr(R, name)(rr.emu) == getattr(R, name)(new), (f.name, name, "peek_many path")
+        assert R.read_time_mult(rr.emu) == (lambda m: float(m[0]) if m and 1 <= m[0] <= 8 else 1.0)(R._peek(new, 0x410AA + w["offset"], 1))
+        assert R.read_frame(rr.emu) == struct.unpack("<H", R._peek(new, A.DS + 0x5520 + w["offset"], 2))[0]
+        # MissileWatch's accessor: the same bytes as a plain peek of each address MissileWatch may ask for
+        get = R.missile_world_memory(rr.emu)
+        for a, n in A.MISSILE_WORLD_DS + [(0x80AA, 16 * 40), (0x8854, 0x24 * 20), (0x85FC, 256)]:
+            assert get(a, n) == rr.emu.peek(A.DS + a + w["offset"], n), (f.name, hex(a))
+        assert get(0x9000, 4) == bytes(4)                                   # outside the windows it reads: zeros
+    assert h.hexdigest()[:16] == GOLD[run.name][0], "a dict reader changed: its output no longer matches the old f19_state's"
 
 
 @need
 @pytest.mark.parametrize("run", RUNS, ids=lambda p: p.name)
-def test_snapshot_equals_from_dicts_of_legacy(run):
+def test_snapshot_equals_the_old_from_dicts(run):
     w, files = _snaps(run, every=40)
-    old = LineSnapDB([tuple(x) for x in w["windows"]]); L._offset[id(old)] = w["offset"]
     rr = ReplayReader(run)
-    n = 0
+    h, n = hashlib.sha256(), 0
     for f in files:
-        raw = f.read_bytes(); old.load(raw); rr.emu.load(raw)
-        st = L.read_state(old, tries=1)
-        if not st["x"]: continue
-        want = GameState.from_dicts(st, L.read_flight(old), L.read_status(old), L.read_alerts(old), L.read_aircraft(old),
-                                    L.read_site_records(old), L.read_waypoints(old), L.read_trackcam(old),
-                                    L.read_sensitivity(old))
-        assert rr.snapshot() == want, f.name
-        n += 1
-    assert n > 0
+        rr.emu.load(f.read_bytes())
+        s = rr.snapshot()
+        if not s.pos.x: continue
+        h.update(repr((f.name, s)).encode()); n += 1
+    assert (h.hexdigest()[:16], n) == GOLD[run.name][1:], "MemoryReader.snapshot() no longer equals GameState.from_dicts of the old readers"
 
 
 @need
@@ -140,18 +127,13 @@ def test_find_offset_scans_and_caches():
         R.find_offset(SnapshotMemory([("all", 0, 0xA0000)], bytes(0xA0000)))
 
 
+OLD_ADDRESSES = {'ALT': 262736, 'SPD': 278730, 'HDG': 262730, 'POS': 283064, 'WPT': 263114, 'WPIDX': 263196, 'SENS': 268250, 'PITCH': 262732, 'FLAGS': 271292, 'TARGETS': 277530, 'CLOCK': 270752, 'FUEL': 264768, 'EVENTS': 281014, 'N_EVENTS': 269982, 'SIMOBJ': 279492, 'AIRCRAFT': 279492, 'NET_ALERT': 282942, 'FRAME_SCALE': 264812, 'GUN_SLOTS': 278734, 'TRACKCAM_MODE': 284070}           # the constants the retired f19_state defined
+
+
 def test_addresses_aliases():
     assert A.AIRCRAFT == A.SIMOBJ == A.ds(0x8854)
     assert A.ALT == A.ds(0x46E0) and A.HDG == A.ds(0x46DA) and A.FRAME == A.ds(0x5520)
-    for name in ("ALT", "SPD", "HDG", "POS", "WPT", "WPIDX", "SENS", "PITCH", "FLAGS", "TARGETS", "CLOCK", "FUEL",
-                 "EVENTS", "N_EVENTS", "SIMOBJ", "AIRCRAFT", "NET_ALERT", "FRAME_SCALE", "GUN_SLOTS", "TRACKCAM_MODE"):
-        assert getattr(A, name) == getattr(L, name), name
-
-
-def test_f19_state_shim_reexports():
-    import f19_state as S
-    assert S._offset is R._offset and S.read_state is R.read_state and S.AIRCRAFT == S.SIMOBJ
-    assert S.read_missile_world.__module__ == "f19_state"
+    for name, value in OLD_ADDRESSES.items(): assert getattr(A, name) == value, name
 
 
 def test_find_events_retries_a_miss(monkeypatch):

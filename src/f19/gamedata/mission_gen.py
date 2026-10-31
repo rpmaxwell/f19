@@ -293,6 +293,24 @@ class Spec:
         return ", ".join(p for p in parts if p) or "any mission"
 
 
+class SameTaskSpec(Spec):
+    """The mission loop's filter (2026-10-30): both targets the same photo / destroy task (one camera or Maverick bay
+    covers both; rules.loadout), plus Spec's length / time limit / SA-14 filters. `kinds` limits which of "photo" and
+    "destroy" are accepted. A mixed pair, supply drop, landing or intercept never matches."""
+    def __init__(self, kinds=("photo", "destroy"), **kw):
+        super().__init__(**kw)
+        bad = set(kinds) - {"photo", "destroy"}
+        if bad or not kinds: raise ValueError(f"kinds: photo and/or destroy, got {sorted(kinds)}")
+        self.kinds = tuple(kinds)
+
+    def match(self, m):
+        same = any(m["primary"]["type"] in TASKS[k] and m["secondary"]["type"] in TASKS[k] for k in self.kinds)
+        return same and super().match(m)
+
+    def __str__(self):
+        return f"both targets {'/'.join(self.kinds)}" + (", " + super().__str__() if super().__str__() != "any mission" else "")
+
+
 def survey(gen, spec, n, **assignment):
     """Generate n missions from random seeds: how often the spec matches, and the bucket mix."""
     rng, hits, buckets, examples = random.Random(1), 0, Counter(), []

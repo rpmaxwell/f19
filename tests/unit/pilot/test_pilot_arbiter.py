@@ -30,13 +30,13 @@ from f19.pilot.phases import FlyLeg
 from f19.pilot.reactions import CmKeys, FighterWatch, FuelTransfer, MissileWatch, TerrainEscape
 from f19.pilot.runner import Reads
 
-# digests recorded 2026-10-30 from the current code (the stack the 10-30 flights flew, with the attack prep loop and the landing changes);
-# before them the arbiter agreed with nav's old merge tick by tick
+# digests recorded 2026-10-30 from the current code with its defaults (the stack the 10-30 flights flew: the attack prep loop, photo
+# confirmation and pull-up, the landing changes); before that the arbiter agreed with nav's old merge tick by tick
 GOLD = {
-'1792609731-None': 'baadb72adddbea99',
-    '1792546698-None': 'aa26c7ae547f654f',
+'1792609731-None': 'de06d3cee03e60ba',
+    '1792546698-None': '24fee4ce32c89d72',
     '1792715432-None': '742220200954daf5',
-    '1792609731-150': '2aaf00a0ebc2e648',
+    '1792609731-150': '2153dd6842da01a8',
     'synthetic-auto': 'f82472c3209d12ab',
     'synthetic-strafe': '4372e5e4f7a62fb9',
     'synthetic-handover': '0ccc17f84ed0097e',

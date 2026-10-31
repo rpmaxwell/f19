@@ -1,7 +1,6 @@
-"""core.units against the constants scattered through scripts/ and analysis/."""
+"""core.units against the planner / terrain constants and the literal values the old scripts all shared (K = 64 ...)."""
 import random
 
-from core_legacy import extract
 from f19.core import units as u
 
 from f19.planner import world as _w
@@ -11,10 +10,9 @@ R = random.Random(7)
 
 
 def test_constants_match_old_copies():
-    for rel in ("research/scripts/nav_legacy.py", "scripts/phases.py", "scripts/nav_tui.py", "scripts/missile_watch.py"):
-        assert extract(rel, "K")["K"] == u.K
+    assert u.K == 64                                       # the one K the old nav, phases, nav_tui and missile_watch each defined
     assert u.PLAN_CELL_KM == world["CELL_KM"] and u.PLAN_CELL_UNITS == world["CELL"]
-    assert u.GROUND_PER_KT == world["GROUND_PER_KT"] == extract("scripts/nav_tui.py", "GROUND_PER_KT")["GROUND_PER_KT"]
+    assert u.GROUND_PER_KT == world["GROUND_PER_KT"] == 0.788      # pooled over 16 logged flights (f19.cli.fuel_log summary)
     assert u.GROUND_KMH_PER_KT == world["KT_KMH"]          # the planner's "KT_KMH" is ground km/h per indicated kt
     from f19.gamedata import terrain as t3d_mod
     t3d = {n: getattr(t3d_mod, n) for n in ("POS_PER_KM", "FT_PER_POS")}

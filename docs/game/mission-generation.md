@@ -78,3 +78,19 @@ How START generates a mission (targets, bases, mission numbers, deadlines, fuel 
 - **Open:** START's menu and cursor variables aren't known yet; there are TODOs in `memory/addresses.py` and
   `mission_gen.py`. Until they're found, menu moves are fixed key sequences checked only by memory reads.
 
+
+## Missions the generator never deals (2026-10-30)
+
+Established by running START's generator (`f19.gamedata.mission_gen.Generator`, unicorn, memory image
+`dumps/menu/briefing.bin`, the same engine `scripts/mission_finder.py` uses) on 1500 random seeds for every
+theater (LB/PG/NC/CE) x level (Cold/Limited/Conventional) x setup (strike/air-to-air) = 36,000 deals, counting both
+the primary and secondary mission numbers. Opponent level was left as in the image (not varied); Veteran/Elite not distinguished.
+
+**Never dealt, as primary or secondary: 9, 10, 23, 24, 34, 35, 37, 40, 41** (LPAR photo/destroy, CV Kremlin
+photo/destroy, Sub Pen photo/destroy, merchant-ship destroy, army depot photo/destroy). Missions 0-3 (airstrip/drop) **are** dealt
+(primary only), so they are real. 23/24/34/35 are North Cape-only in the catalog, yet NC deals none of them: most likely no
+matching target record exists in the NC data, not just bad luck. 9/10/37/40/41 are the rows already marked "unconfirmed" in missions.md.
+**Very rare but dealt:** 32 (14 of 36k), 12 (15), 44 (25), 38 (45), 11 (45), 33 (52). A zero for these would need a bigger run.
+**Not proof:** absence in 36k deals is strong evidence, not a disassembly proof; the table-matching code was not re-read for these rows.
+Also: as *secondary* the generator never deals 0-3, 19, 20, 22, 26, 34-37, 40, 41, 44 and 47-55 (by the primary-only rules above, plus
+the airstrip/deadline rules), and 7/8 almost never (9 and 2 deals).
