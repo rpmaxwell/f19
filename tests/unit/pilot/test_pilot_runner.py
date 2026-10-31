@@ -224,14 +224,14 @@ def _clock_runner(tm, rate):
     from f19.core.clock import FrameClock
     from f19.pilot.runner import Runner
     r = Runner.__new__(Runner)
-    r.game_clock, r._gc_log, r.phase_log = FrameClock(), 0.0, []
+    r.game_clock, r._gc_log, r._gc_t0, r.phase_log = FrameClock(), 0.0, None, []
     st = {"wall": 0.0, "frame": 1000}
     class FakeReads:
         def frame_fs(self_): return st["frame"], 8
         def time_mult(self_): return tm
     r.reads = FakeReads()
     out = []
-    for i in range(12):                                         # 12 real seconds
+    for i in range(30):                                         # 30 real seconds (the first 20 are warm-up: no line)
         st["wall"] = float(i); st["frame"] = 1000 + int(round(i * rate * 4))
         r._measure_clock(st["wall"], out)
     return out
@@ -242,6 +242,12 @@ def test_clock_line_reports_the_speed_relative_to_the_tuned_one():
     assert len(out) == 1 and "time byte 1 = 1.02 of the tuned speed" in out[0].text and "OUTSIDE" not in out[0].text
     out = _clock_runner(2.0, 5.0)                               # TIME x2: twice the rate, the byte says 2: still the tuned speed
     assert "time byte 2 = 1.02 of the tuned speed" in out[0].text and "OUTSIDE" not in out[0].text
+
+
+def test_clock_line_waits_for_a_real_measurement():
+    """The first reading of a run is noisy (0.5-2.6 seen): nothing is said, and nothing is flagged, in the first CLOCK_WARMUP_S."""
+    from f19.pilot.runner import Runner
+    assert all(e.t >= Runner.CLOCK_WARMUP_S for e in _clock_runner(1.0, 1.5)) and _clock_runner(1.0, 1.5)
 
 
 def test_clock_line_flags_a_different_emulator_speed():

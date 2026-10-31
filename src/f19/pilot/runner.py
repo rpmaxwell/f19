@@ -180,7 +180,7 @@ class Runner:
         self.event_list_s = event_list_s
         self.allow_eject = allow_eject
         self.dead = 0.0
-        self.game_clock, self._gc_log = FrameClock(), 0.0   # measures only; nothing flies on it (core.clock.FrameClock)
+        self.game_clock, self._gc_log, self._gc_t0 = FrameClock(), 0.0, None   # measures only; nothing flies on it (core.clock.FrameClock)
         self.phase_log = []
         self._ev_seen, self._ev_next = None, 0.0
         self._evl_next, self.event_list = 0.0, None
@@ -264,6 +264,7 @@ class Runner:
         self.phase_log.append(f"{now:.0f} {text}"); events.append(Event(now, text))
 
     SPEED_BAND = (0.8, 1.25)                           # measured / tuned game speed outside this is flagged in the clock line
+    CLOCK_WARMUP_S = 20.0                              # no clock line (and no flag) before this much measurement
 
     def _measure_clock(self, now, events):
         """FrameClock: game time and the game/real ratio from the frame counter (measure-only). Every 120 s a line says it, relative to
@@ -271,9 +272,10 @@ class Runner:
         gain and hold time in this package is in real seconds at that speed."""
         try: frame, fs = self.reads.frame_fs()
         except Exception: return                       # a replay source or a failed read: no measurement this tick
+        if self._gc_t0 is None: self._gc_t0 = now
         self.game_clock.feed(frame, fs, now)
         r = self.game_clock.ratio
-        if r is None or now < self._gc_log: return
+        if r is None or now < self._gc_log or now - self._gc_t0 < self.CLOCK_WARMUP_S: return   # the first seconds are noisy (0.5-2.6 seen)
         self._gc_log = now + 120.0
         try: tm = self.reads.time_mult()
         except Exception: tm = 1.0
